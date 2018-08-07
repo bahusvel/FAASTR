@@ -1,0 +1,37 @@
+[package]
+name = "kernel"
+version = "0.1.33"
+build = "build.rs"
+
+[lib]
+name = "kernel"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+bitflags = "1"
+clippy = { version = "*", optional = true }
+linked_list_allocator = "0.5"
+raw-cpuid = "3.0"
+redox_syscall = { path = "syscall" }
+slab_allocator = { path = "slab_allocator" }
+spin = "0.4"
+
+[dependencies.goblin]
+version = "0.0.10"
+default-features = false
+features = ["elf32", "elf64"]
+
+[dependencies.x86]
+version = "0.7"
+default-features = false
+
+[features]
+default = ["acpi", "graphical_debug"]
+acpi = []
+doc = []
+graphical_debug = []
+live = []
+multi_core = []
+pti = []
+slab = []
