@@ -179,6 +179,7 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
             context.ens = SchemeNamespace::from(1);
             context.status = context::Status::Runnable;
 
+            /* key value environment parsing, what is the environment?
             let mut context_env = context.env.lock();
             for line in env.split(|b| *b == b'\n') {
                 let mut parts = line.splitn(2, |b| *b == b'=');
@@ -191,6 +192,7 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
                     }
                 }
             }
+            */
         }
         Err(err) => {
             panic!("failed to spawn userspace_init: {:?}", err);

@@ -1,1 +1,7 @@
 The kernel began life from redox tag version 0.3.5, it should be included in this repo, but if ever it is lost its important.
+
+Notes on reverse engineering redox's code:
+
+* arch/x86_64/pti is a page table isolation feature (unmaps kernel pages) to help against meltdown attack. This is not essential and it seems to only do stuff with stack and otherwise seems useless.
+
+* BSP is the first processor and APs are secondary/auxilary processors.
