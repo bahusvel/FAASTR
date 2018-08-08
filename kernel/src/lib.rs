@@ -31,7 +31,6 @@
 #![feature(ptr_internals)]
 #![feature(thread_local)]
 #![feature(unique)]
-#![feature(compiler_builtins_lib)]
 #![no_std]
 
 pub extern crate x86;
@@ -45,7 +44,6 @@ extern crate goblin;
 extern crate linked_list_allocator;
 extern crate spin;
 extern crate slab_allocator;
-extern crate compiler_builtins;
 
 use alloc::arc::Arc;
 use core::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
@@ -167,7 +165,6 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     println!("Env: {:?}", ::core::str::from_utf8(env));
     println!("Denis was here");
 
-
     loop {
         unsafe {
             interrupt::disable();
@@ -223,6 +220,13 @@ pub fn kmain_ap(id: usize) -> ! {
 
         let pid = syscall::getpid();
         println!("AP {}: {:?}", id, pid);
+
+        loop {
+            unsafe {
+                interrupt::disable();
+                interrupt::halt();
+            }
+        }
 
         loop {
             unsafe {

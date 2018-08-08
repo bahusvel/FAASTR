@@ -1,6 +1,8 @@
+FEATURES=--features multi_core
+
 build/libkernel.a: kernel/Cargo.toml kernel/src/* kernel/src/*/* kernel/src/*/*/* kernel/src/*/*/*/*
+	cd kernel && xargo rustc --lib --target $(KTARGET) --release -- -C soft-float -C debuginfo=2 --emit link=../$@
 # Temporary fix for https://github.com/redox-os/redox/issues/963 allowing to build on macOS
-	cd kernel && cargo build --release && cp target/release/libkernel.a ../$@
 # ifeq ($(UNAME),Darwin)
 # 	cd kernel && CC=$(ARCH)-elf-gcc AR=$(ARCH)-elf-ar CFLAGS=-ffreestanding INITFS_FOLDER=$(ROOT)/build/initfs xargo rustc --lib --target $(KTARGET) --release -- -C soft-float -C debuginfo=2 --emit link=../$@
 # else
@@ -8,8 +10,7 @@ build/libkernel.a: kernel/Cargo.toml kernel/src/* kernel/src/*/* kernel/src/*/*/
 # endif
 
 build/libkernel_live.a: kernel/Cargo.toml kernel/src/* kernel/src/*/* kernel/src/*/*/* kernel/src/*/*/*/*
-	cd kernel && cargo build --release && cp target/release/libkernel.a ../$@
-	# cd kernel && xargo rustc --lib --features live --target $(KTARGET) --release -- -C soft-float --emit link=../$@
+	cd kernel && xargo rustc --lib --target $(KTARGET) --release -- -C soft-float -C debuginfo=2 --emit link=../$@
 
 build/kernel: kernel/linkers/$(ARCH).ld build/libkernel.a
 	$(LD) --gc-sections -z max-page-size=0x1000 -T $< -o $@ build/libkernel.a
@@ -18,6 +19,8 @@ build/kernel: kernel/linkers/$(ARCH).ld build/libkernel.a
 
 build/kernel_live: kernel/linkers/$(ARCH).ld build/libkernel_live.a #build/live.o
 	$(LD) --gc-sections -z max-page-size=0x1000 -T $< -o $@ build/libkernel_live.a #build/live.o
+	objcopy --only-keep-debug $@ $@.sym
+	objcopy --strip-debug $@
 
 # build/live.o: build/filesystem.bin
 # 	#TODO: More general use of $(ARCH)
