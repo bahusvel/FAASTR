@@ -5,3 +5,57 @@ Notes on reverse engineering redox's code:
 * arch/x86_64/pti is a page table isolation feature (unmaps kernel pages) to help against meltdown attack. This is not essential and it seems to only do stuff with stack and otherwise seems useless.
 
 * BSP is the first processor and APs are secondary/auxilary processors.
+
+Understanding memory subsystem:
+
+* The bootloader creates a map of physical memory areas, they consist of actual memory and I guess also devices. Some of these memory areas are free, marked with type 1. Other are occupied, apparently there are some that are not available too, I'm guessing that's just unused address space. Its not associated an ACPI, those are ACPI flags which describe if some extended attributes that are basically undefined right now except for non volatile which is bit 1.
+
+* its interesting because it says if bit 0 is clear then I shouldnt use that memory, but I also guess this has to do with ACPI version. Because apparently ACPI version 3.0 only does that. But perhaps the emulator is not emulating 3.0?
+
+* So the bootloader is getting the memory area map from the bios by using BIOS Function: INT 0x15, EAX = 0xE820 as described here: https://wiki.osdev.org/Detecting_Memory_(x86)
+
+MemoryArea { base_addr: 0, length: 654336, _type: 1, acpi: 0 }
+MemoryArea { base_addr: 654336, length: 1024, _type: 2, acpi: 0 }
+MemoryArea { base_addr: 983040, length: 65536, _type: 2, acpi: 0 }
+MemoryArea { base_addr: 1048576, length: 2146299904, _type: 1, acpi: 0 }
+MemoryArea { base_addr: 2147348480, length: 135168, _type: 2, acpi: 0 }
+MemoryArea { base_addr: 2952790016, length: 268435456, _type: 2, acpi: 0 }
+MemoryArea { base_addr: 4275159040, length: 16384, _type: 2, acpi: 0 }
+MemoryArea { base_addr: 4278173696, length: 16384, _type: 2, acpi: 0 }
+MemoryArea { base_addr: 4294705152, length: 262144, _type: 2, acpi: 0 }
+
+* Studying the memory areas above, there is a large chunk of roughly 2046 MB that is free, this is the majority of free memory supplied to the VM. There is another free chunk at the beginning, I'm guessing that is some kind of buffering or where the bootloader was or something. Another large chunk can be observed of 256MB, but it is marked as used. Just as all other ones, I'm gessing they are memory mapped devices. Most of which are rather small.
+
+* Upon further reading from here https://wiki.osdev.org/Detecting_Memory_(x86), it appears that the memory area 1 and 2 (counting from zero) are not reclaimable, they contain some chipset specific magic, used by SMM, and bios, and all sorts of cool and evil stuff. So the very next area is actually free free RAM! And hence they are not contiguous.
+
+* I see, so according to this 100000:20B260, the kernel is also loaded into that big chunk of free memory area. And appears to be roughly a MB in size? That is why this information is passed into the allocator, so that the allocator doesn't go allocating that memory willy nilly.
+
+* There is a frame allocator, it is stacked, bump + recycle, bump cannot free frames, recycle keeps all free frame in a vector, and it will iterate through them. Which sounds like a bad idea. When the frame is not in use, it will go to the recycle allocator vector.
+
+* The bump allocator just allocates frames from an iterator of free memory areas. That's all. I wonder why would there be multiple free memory areas? (Except for the first one and the major one).
+
+* I see, the recycle allocator uses a vector, which should allocate memory, but virtual memory subsystem is not even up yet! They rely on the fact that Vec::new() doesnt allocate, there is a flag that checks this, redox refers to it as core. Once core is there it can do its reclaiming and allocating business. Thats all very dodgy dangerous and basically unrestricled. Althought maybe the allocator would panic because its not set yet? Yes it will.
+
+* After paging starts, gdt is setup, it will setup the allocator, the heap, and then enable noncore of the frame allocator which will allow it to use that vec.
+
+Understanding the paging:
+
+* Paging initialisation gets parameters about various parts of the kernel. Including its physical location and virtual addresses of the code. So virtual memory subsystem is already definetly up. And kernel is mapped to 0xffffff0000100000 according to the linker script. It's stack is FFFFFF0000080000 - FFFFFF000009F000 and some environment thingy there as well. The initialiser for paging also retrieves addresses of various memory areas like bss, tbss, data, text, rodata and so on from labels provided by the compiler/linker. Smart. I'm guessing it will use those to create protection.
+
+* The offset is kinda cool, because 0x100000  is the physical address of the beggining of the kernel. So to map it to virtual address one just needs to append 0xffffff0000.
+
+* First of all paging initialises PAT, which is table stored in register that allows us to specify on per page basis what kind of caching to use. It then creates page table structure and makes in inactive, it then proceeds to fill up that page table structure with kernel mappings. Once this page table structure is created, it will switch to it. (And because it matches current structure) thats alright.
+
+* How the mapper actually does its business seems not so relevant. But I may need to study it later.
+
+* Then the GDT is setup which tells the CPU what each segment means. Also quite complex may need to figure out what it is and what it does later one.
+
+Understaning kernel heap allocation:
+
+* Up to this point there is basically no heap allocation in the kernel, any attempts would panic. The arch startup will now initialise the heap allocator. Which seems reasonably simple. It maps the heap at some known predefined offset. The allocation itself happens in the mapper. And it will allocate 1MB at a time. And will increase the heap size only if allocation fails. Seems pretty straighforward to me, which is very nice.
+
+* How does the allocator get set as Rusts default allocator? Probably somewhere in the root of the crate. Yes, here:
+#[global_allocator]
+static ALLOCATOR: allocator::Allocator = allocator::Allocator;
+
+* ACPI Stuff, I believe it is most probably only relevant for AP bring up, the rest is for devices and some system config stuff.
