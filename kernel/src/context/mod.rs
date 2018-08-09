@@ -85,6 +85,7 @@ pub fn contexts_mut() -> RwLockWriteGuard<'static, ContextList> {
     CONTEXTS.call_once(init_contexts).write()
 }
 
+// The context this processor is currently in.
 pub fn context_id() -> ContextId {
     CONTEXT_ID.load(Ordering::SeqCst)
 }

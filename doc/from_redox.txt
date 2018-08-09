@@ -46,9 +46,9 @@ Understanding the paging:
 
 * First of all paging initialises PAT, which is table stored in register that allows us to specify on per page basis what kind of caching to use. It then creates page table structure and makes in inactive, it then proceeds to fill up that page table structure with kernel mappings. Once this page table structure is created, it will switch to it. (And because it matches current structure) thats alright.
 
-* How the mapper actually does its business seems not so relevant. But I may need to study it later.
+* The mapper is very nice and mostly transparent it just manages the kary (4 level) page table, where it creates and removes entries of page mappings, it can allocate frames by itself which is nice, or can be given pre-allocated or re-used frames which is also nice. The unmap_inner function is written very weirdly, but the logic is reasonably straighforward.
 
-* Then the GDT is setup which tells the CPU what each segment means. Also quite complex may need to figure out what it is and what it does later one.
+* Then the GDT is setup which tells the CPU what each segment means. Also quite complex may need to figure out what it is and what it does later one. Basically this is just to define all the segment selectors. I'm pretty sure its not that interesting, but I man encounter GDT or LDT in context switching, in which case it might be slightly important.
 
 Understaning kernel heap allocation:
 
@@ -59,3 +59,31 @@ Understaning kernel heap allocation:
 static ALLOCATOR: allocator::Allocator = allocator::Allocator;
 
 * ACPI Stuff, I believe it is most probably only relevant for AP bring up, the rest is for devices and some system config stuff.
+
+Understanding contexts:
+
+* The whole context magic appears to stem from the main kernel function, and where contexts are initialised. That is context::init(). This function is called once per core, and it's purpose is to create a kernel context per core.
+
+* Important aspect of the context is the list of contexts on the system. This list is global and shared between all calls. New contexts are created as elements of that list. Although the list is called a list its actually a BTreeMap, but regarless it can still be sequential. A context is always created at the end of the day through ContextList::new_context() method, which inserts the context, and gives a reference to it. context::init() function creates the initial context for each core.
+
+* Each core has a thread local variable which identifies the context it is currently in. CONTEXT_ID.
+
+* Otherwise this function just does some very very trivial initialisation like setting this context to runnable and running, setting the cpu, allocating memory for fx stuff storage.
+
+* The fact that the list of context is a singular global locked datastructure is kinda bad. It is RwLock datastructure but even then it can still cause starvation.
+
+This is where context init basically ends, further points of entry into context management are through execution of code and commands. One such is context::contexts_mut().spawn(userspace_init). Which uses ContextList::spawn() to run a function in kernel space in a separate context.
+
+Spawning of context:
+
+* It begins with a creation of context in a standard manner with new_context(). Allocation of fx stuff, and also a stack for this function to run. The stack is 64k, and right at the beggining stack (end of memory) we put a function pointer that we would like to execute (I guess it so so we can run it by executing ret).
+
+* Then we create an active page table, and set it into the arcithecture dependent portion of the context, but this page table is empty. No? Why is it empty? Perhaps we will find out soon enough.
+
+* The rest is fairly simple we set the stack and the fx variables into the context, and then return a handle to it.
+
+* We are not running this function yet, this would occur with context::switch(), what's weird is that we disable interrupts before calling context::switch(), why? Perhaps context switching is not interrupt safe, but if so, why not put it into the context::switch method itself?
+
+* Man the scheduling is really fucky, first it will obtain some global lock for everything in the world. It will find current context (which is fine), traverse the list of context updating all of them. Then it will traverse the list again (from current context) looking for a task to run, if it doesnt find anything it will traverse the list from beggining to current task looking for task to run. The first traversal seems like best try to get everything to update. The rest seems like trying to make round robin fair.
+
+* It will then switch current context to not running, the new context to running, and setup the tss. It will drop the global context switch lock (not sure why). Run signal handler if there is one and otherwise trigger architecture specific switching routine.
