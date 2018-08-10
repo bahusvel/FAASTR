@@ -6,7 +6,7 @@ Notes on reverse engineering redox's code:
 
 * BSP is the first processor and APs are secondary/auxilary processors.
 
-Understanding memory subsystem:
+# Understanding memory subsystem:
 
 * The bootloader creates a map of physical memory areas, they consist of actual memory and I guess also devices. Some of these memory areas are free, marked with type 1. Other are occupied, apparently there are some that are not available too, I'm guessing that's just unused address space. Its not associated an ACPI, those are ACPI flags which describe if some extended attributes that are basically undefined right now except for non volatile which is bit 1.
 
@@ -38,7 +38,7 @@ MemoryArea { base_addr: 4294705152, length: 262144, _type: 2, acpi: 0 }
 
 * After paging starts, gdt is setup, it will setup the allocator, the heap, and then enable noncore of the frame allocator which will allow it to use that vec.
 
-Understanding the paging:
+# Understanding the paging:
 
 * Paging initialisation gets parameters about various parts of the kernel. Including its physical location and virtual addresses of the code. So virtual memory subsystem is already definetly up. And kernel is mapped to 0xffffff0000100000 according to the linker script. It's stack is FFFFFF0000080000 - FFFFFF000009F000 and some environment thingy there as well. The initialiser for paging also retrieves addresses of various memory areas like bss, tbss, data, text, rodata and so on from labels provided by the compiler/linker. Smart. I'm guessing it will use those to create protection.
 
@@ -48,9 +48,9 @@ Understanding the paging:
 
 * The mapper is very nice and mostly transparent it just manages the kary (4 level) page table, where it creates and removes entries of page mappings, it can allocate frames by itself which is nice, or can be given pre-allocated or re-used frames which is also nice. The unmap_inner function is written very weirdly, but the logic is reasonably straighforward.
 
-* Then the GDT is setup which tells the CPU what each segment means. Also quite complex may need to figure out what it is and what it does later one. Basically this is just to define all the segment selectors. I'm pretty sure its not that interesting, but I man encounter GDT or LDT in context switching, in which case it might be slightly important.
+* Then the GDT is setup, whose main purpose is to basically create TLS (FS segment register), it also defines other segments which are mandatory to be defined but otherwise not useful, since this is a Linux clone it doesnt use hardware context switching the TSS is basically irrelevant too.
 
-Understaning kernel heap allocation:
+# Understaning kernel heap allocation:
 
 * Up to this point there is basically no heap allocation in the kernel, any attempts would panic. The arch startup will now initialise the heap allocator. Which seems reasonably simple. It maps the heap at some known predefined offset. The allocation itself happens in the mapper. And it will allocate 1MB at a time. And will increase the heap size only if allocation fails. Seems pretty straighforward to me, which is very nice.
 
@@ -60,7 +60,7 @@ static ALLOCATOR: allocator::Allocator = allocator::Allocator;
 
 * ACPI Stuff, I believe it is most probably only relevant for AP bring up, the rest is for devices and some system config stuff.
 
-Understanding contexts:
+# Understanding contexts:
 
 * The whole context magic appears to stem from the main kernel function, and where contexts are initialised. That is context::init(). This function is called once per core, and it's purpose is to create a kernel context per core.
 
@@ -74,7 +74,7 @@ Understanding contexts:
 
 This is where context init basically ends, further points of entry into context management are through execution of code and commands. One such is context::contexts_mut().spawn(userspace_init). Which uses ContextList::spawn() to run a function in kernel space in a separate context.
 
-Spawning of context:
+# Spawning of context:
 
 * It begins with a creation of context in a standard manner with new_context(). Allocation of fx stuff, and also a stack for this function to run. The stack is 64k, and right at the beggining stack (end of memory) we put a function pointer that we would like to execute (I guess it so so we can run it by executing ret).
 
@@ -82,8 +82,74 @@ Spawning of context:
 
 * The rest is fairly simple we set the stack and the fx variables into the context, and then return a handle to it.
 
-* We are not running this function yet, this would occur with context::switch(), what's weird is that we disable interrupts before calling context::switch(), why? Perhaps context switching is not interrupt safe, but if so, why not put it into the context::switch method itself?
+* We are not running this function yet, this would occur with context::switch(), what's weird is that we disable interrupts before calling context::switch(), why? Perhaps context switching is not interrupt safe, but if so, why not put it into the context::switch method itself? Tha'ts basically right context switching is not an interrupt safe procedure, although why it is not in the context::switch() method is not clear to me. Perhaps they want you to have more control over when to reenable them back? Unclear.
+
+* Oh I kinda see it, so for the switching procedure interrupts must be off, atleast when we are doing the switch I think, maybe... But they are off only for the current task (FLAGS register), once we actually switch we load the new FLAGS register, the issue though is that the new FLAGS register is zeroed out by default. Meaning that interrupts are also disabled. That may be aight, but feels a bit dodgy, I think interrupts should be enabled.
 
 * Man the scheduling is really fucky, first it will obtain some global lock for everything in the world. It will find current context (which is fine), traverse the list of context updating all of them. Then it will traverse the list again (from current context) looking for a task to run, if it doesnt find anything it will traverse the list from beggining to current task looking for task to run. The first traversal seems like best try to get everything to update. The rest seems like trying to make round robin fair.
 
-* It will then switch current context to not running, the new context to running, and setup the tss. It will drop the global context switch lock (not sure why). Run signal handler if there is one and otherwise trigger architecture specific switching routine.
+* It will then switch current context to not running, the new context to running, and setup the tss. It will drop the global context switch lock (not sure why). Run signal handler if there is one and otherwise trigger architecture specific switching routine. It doesn't make sense, when the context is created, it makes a new page table for it, and this page table is never filled. During the switch it should switch to an empty page table!
+
+* OOOOOOOOOOH ITS FUCKING STUPID !!!! MAN WTF!!!! The ActivePageTable::address() will just retrive the value of CR3 register... it will not take the address of the actual active page table object. So they create a new page table just for the fucking sake of retrieving the current value of CR3!!!! Why is it an object method and not a class method, or merely just a function !?!?!?!?!?!? So because its the same, it will not reload the page table when it switches.... OR even if it did reload it would just load it to the kernel one, granted the kernel calls the spawn() method, firstly that's unsafe because who knows maybe the current page table no longer exists, second its stupid!!!!!!!!!!!!!!!!!!!!! WHY WHY WHY !?!?!?!
+
+# Redox's system calls:
+
+* There is some general debug stuff which allows ot print system calls, nothing special. (Not actual system calls)
+
+* There are priviledged calls that allow for writing drivers, I dont actually want these to be system calls maybe or maybe yes, but I will keep those for function based drivers. Dont need them immediately though. They deal with iopl setting, and allocation of memory mappings to physical pages.
+
+* There is file stuff / VFS, but I literally dont care about that, I will not have any files whatsoever. I think the exec system call does use those, but I will just modify the stupid exec system call.
+
+* There is futex, I don't think I need it, as there is not multithreaded in my functions. It may be a useful IO driver for synchronization of functions working on the same IO driver, but that is a separate non essential IO, and perhaps system level is not even the right place to hold these kind of locks.
+
+* There is priviledges, which I wont really have, because there is nothing to priviledge about. The priviledges are literally set by what IO you have can and cannot do.
+
+* There is time, which is useful, atleast getting of time, the sleeping will be removed. Yielding I can keep, but I dont think that is useful.
+
+* There is also memory validation stuff, which again is not system calls, but used as utility methods.
+
+* The bigest and the mose useful ones are process controls marked as exec.rs, those will be addressed in a dedicated section.
+
+# Process Control System Calls
+
+* brk() - I care about memory allocation for sure. I need to see whether redox implements other things mmap() via driver calls perhaps. This function is relatively straightforward, it just resizes the heap via normal methods in SharedMemory.
+
+* exit()/kill()/waitpid() - I care about function termination (abort/reset), but kill will not be exposed to user functions, and not used for signal delivery, merely for system routines to kill processes. Kill sends signals so not that interesting basically. Exit and its interaction with waitpid() are interesting on the other hand.
+
+* Exit obtains a context lock, closes files, transfers child ownership to parent of this process (would my OS have child functions? Maybe...) Then proceeds to unblock vfork and waitpid calls. Don't care about those for sure. but I do care about caller functions that call child functions by fusion (i.e. by blocking, but I need a simpler mechanism for that, waipid may be aight, but I need simpler). Because I will only have one caller at a time. It alls checks if it is the main kernel thread that quat, and stops the kernel... Whatever.
+
+* waitpid() is overcomplicated because it implements all the stupid Linux stuff, I dont care about any of it, I just want its functionallity to wait and that's it. Well and get the return value. But that works differently to all the different return values or blocking or whatever. waitpid() is not going to be a call available to user functions, just like kill, it is only useful for function lifetime management by the system.
+
+* getpid()/getpgid()/getppid()/setpgid() - dont care, function will have ID but it shouldnt need to address it.
+
+* sigaction()/sigreturn() - code here may be relevant for function invocation (if I decide to invoke them like signals) In fact kinda nope, because they simply add the actions to the list of actions. I may have an user accessible IO to add a function dynamically at some point, but not now, so I dont care. Only the loader will find the current functions and add them to the function list which is in the context.
+
+# Exec/Clone
+
+* Exit and clone are 2 of the biggest and most important functions for me, as they deal with spawning userspace code. Although their meaning to me is different. The way functions are spawned in my system are as follows:
+
+1. Function code must be loaded (which is basically the first part of exec). The loading on its own just creates the static context of the function, in fact its not even context, more like a context template.
+
+2. Based on the template the function is created, this is kinda like clone/fork where we populate the template with some neccessary information and ultimately create the context.
+
+* The semantics of the call itself are flexible, it could be a call by fusion, blocking current function and switchign control to the called one, or it could schedule such function to be called by the system sometime at some point in time. Which I guess is like vfork and fork basically. Regardless, this is how exec and clone currently work.
+
+## Exec
+
+* Exec is composed of outer function and inner function. Outer function loads the file, checks if file is a script, and recurses until it finally finds an executable with its arguments. I don't need executable like script support right now, so I dont care, neither will I load from files, I will load directly from memory. It then figures out what the UID and GID should be based on the file stat mode.
+
+* Checks the size of argument list, NOT THE ARGUMENTS! The arguments seem to be passed in a dedicated section, and the pointers and lenghts of individual arguments are passed on the stack. Which is aight. I will also pass my arguments in a dedicated section, and a pointer to them, perhaps on the stack, or just implicitely.
+
+* It then checks each section for being loaded not above 2GB, because of TLS address, which is stupid..... I wont have TLS in userspace, but this is honestly stupid.
+
+* And after its done all the checking it passes the name, uid and gid, the elf data and arguments to the inner function - exec_noreturn. So this is basically the useful function to me, everything before I most dont care, except for that TLS check, BUT THAT THING SO DUMB!!!!!!!!!!!!
+
+* Inner exec function, sets the name, as passed by the top function.... thats stupid again, why does it pass it and not just set it? Sets the uid and gid, same story. And then actually does useful things by loading the elf segments into the process!!!! yay! It also maps TLS, but I wont have no TLS in userspace. Then it maps the heap, the stack and the signal stack. And then the TLS, I guess before it just parsed the TLS and didn't map it. It then places the arguments in a dedicated section and remaps it to the user. Sets up some default sigactions.
+
+* And then it goes through all the files, and closes files that need to be closed. Checks if its supposed to vfork, ublocks the parent and goes to usermode!
+
+* Dont actually see where the pointers to arguments are passed..... hmmmmm.
+
+* Interestingly it pushes these memory regions into executable image object. I guess it is just for ownership or something.
+
+* Continue exploring from fork/clone.
