@@ -1126,7 +1126,10 @@ pub fn exit(status: usize) -> ! {
                 }
             }
         }
+        println!("PID {:?} exited", pid);
     }
+
+
 
     let _ = unsafe { context::switch() };
 

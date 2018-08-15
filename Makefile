@@ -21,6 +21,7 @@ include mk/kernel.mk
 
 # Disk images
 include mk/disk.mk
+include mk/tests.mk
 
 rust-src:
 	git submodule add https://github.com/rust-lang/rust rust

@@ -152,7 +152,7 @@ pub extern "C" fn userspace_init() {
         Ok(2)
     );
 
-    syscall::exec(b"/bin/init", &[]).expect("failed to execute init");
+    syscall::exec(b"initfs:/exit", &[]).expect("failed to execute init");
 
     panic!("init returned");
 }
@@ -171,12 +171,14 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
 
     println!("Denis was here");
 
+    /*
     loop {
         unsafe {
             interrupt::disable();
             interrupt::halt();
         }
     }
+    */
 
     match context::contexts_mut().spawn(userspace_init) {
         Ok(context_lock) => {
@@ -184,19 +186,6 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
             context.rns = SchemeNamespace::from(1);
             context.ens = SchemeNamespace::from(1);
             context.status = context::Status::Runnable;
-
-            let mut context_env = context.env.lock();
-            for line in env.split(|b| *b == b'\n') {
-                let mut parts = line.splitn(2, |b| *b == b'=');
-                if let Some(name) = parts.next() {
-                    if let Some(data) = parts.next() {
-                        context_env.insert(
-                            name.to_vec().into_boxed_slice(),
-                            Arc::new(Mutex::new(data.to_vec())),
-                        );
-                    }
-                }
-            }
         }
         Err(err) => {
             panic!("failed to spawn userspace_init: {:?}", err);
@@ -226,15 +215,6 @@ pub fn kmain_ap(id: usize) -> ! {
 
         let pid = syscall::getpid();
         println!("AP {}: {:?}", id, pid);
-
-        println!("Denis was here");
-
-        loop {
-            unsafe {
-                interrupt::disable();
-                interrupt::halt();
-            }
-        }
 
         loop {
             unsafe {
