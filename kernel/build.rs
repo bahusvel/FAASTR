@@ -36,7 +36,9 @@ fn scan_folder(loc: &Path) -> (HashMap<String, Vec<String>>, Vec<String>) {
         }
 
         current.sort();
-        folders.entry(String::from(loc.to_str().unwrap()).replace("\\", "/")).or_insert(current);
+        folders
+            .entry(String::from(loc.to_str().unwrap()).replace("\\", "/"))
+            .or_insert(current);
     } else {
         panic!("{:?} is not a folder!", loc);
     }
@@ -45,42 +47,21 @@ fn scan_folder(loc: &Path) -> (HashMap<String, Vec<String>>, Vec<String>) {
 }
 
 // Write folder/file information to output file
-fn fill_from_location(f: &mut fs::File, loc: &Path ) -> Result<(), (Error)> {
-    let (folders, mut files) = scan_folder(loc);
-    let mut folder_it:Vec<_> = folders.keys().collect();
+fn fill_from_location(f: &mut fs::File, loc: &Path) -> Result<(), (Error)> {
+    let (_, mut files) = scan_folder(loc);
 
     let loc_str = loc.to_str().unwrap();
     let mut idx = loc_str.len();
-
-    if !loc_str.ends_with("/") {
-        idx += 1;
-    }
-
-    folder_it.sort();
     files.sort();
-    for dir in folder_it.iter() {
-        let strip: String = dir.chars().skip(idx).collect();
-        write!(f, "        files.insert(b\"{}\", (b\"", strip)?;
-
-        // Write child elements separated with \n
-        let sub = folders.get(*dir).unwrap();
-        let mut first = true;
-        for child in sub.iter() {
-            let idx = child.rfind('/').unwrap() + 1;
-            let (_, c) = child.split_at(idx);
-            if first {
-                write!(f, "{}", c)?;
-                first = false;
-            } else {
-                write!(f, "\\n{}", c)?;
-            }
-        }
-        write!(f, "\", true));\n")?;
-    }
 
     for name in files.iter() {
         let (_, strip) = name.split_at(idx);
-        write!(f, "        files.insert(b\"{}\", (include_bytes!(\"{}\"), false));\n", strip, name)?;
+        write!(
+            f,
+            "        b\"{}\" => Some(include_bytes!(\"{}\")),\n",
+            strip,
+            name
+        )?;
     }
 
     Ok(())
@@ -95,26 +76,28 @@ fn main() {
     let src = env::var("INITFS_FOLDER");
 
     // Write header
-    f.write_all(b"
-mod gen {
-    use alloc::BTreeMap;
-    pub fn gen() -> BTreeMap<&'static [u8], (&'static [u8], bool)> {
-        let mut files: BTreeMap<&'static [u8], (&'static [u8], bool)> = BTreeMap::new();
-").unwrap();
+    f.write_all(
+        b"
+    pub fn initfs_get_file(name: &'static [u8]) -> Option<&'static [u8]> {
+        match name {
+",
+    ).unwrap();
 
     match src {
         Ok(v) => fill_from_location(&mut f, Path::new(&v)).unwrap(),
         Err(e) => {
-            f.write_all(
-                b"        files.clear();" // Silence mutability warning
-            ).unwrap();
-            println!("cargo:warning=location not found: {}, please set proper INITFS_FOLDER.", e);
+            println!(
+                "cargo:warning=location not found: {}, please set proper INITFS_FOLDER.",
+                e
+            );
         }
     }
 
-    f.write_all(b"
-        files
+    f.write_all(
+        b"
+        _ => None
     }
 }
-").unwrap();
+",
+    ).unwrap();
 }

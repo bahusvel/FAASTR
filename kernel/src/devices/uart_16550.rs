@@ -1,6 +1,5 @@
 use core::fmt::{self, Write};
 
-use scheme::debug::debug_input;
 use syscall::io::{Io, Pio, Mmio, ReadOnly};
 
 bitflags! {
@@ -90,7 +89,6 @@ impl<T: Io<Value = u8>> SerialPort<T> {
     pub fn receive(&mut self) {
         while self.line_sts().contains(LineStsFlags::INPUT_FULL) {
             let b = self.data.read();
-            debug_input(b);
         }
     }
 

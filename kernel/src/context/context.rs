@@ -6,10 +6,8 @@ use core::mem;
 use spin::Mutex;
 
 use context::arch;
-use context::file::FileDescriptor;
 use context::memory::{Grant, Memory, SharedMemory, Tls};
 use device;
-use scheme::{SchemeNamespace, FileHandle};
 use syscall::data::SigAction;
 use syscall::flag::SIG_DFL;
 use sync::WaitMap;
@@ -100,14 +98,10 @@ pub struct Context {
     pub ruid: u32,
     /// The real group id
     pub rgid: u32,
-    /// The real namespace id
-    pub rns: SchemeNamespace,
     /// The effective user id
     pub euid: u32,
     /// The effective group id
     pub egid: u32,
-    /// The effective namespace id
-    pub ens: SchemeNamespace,
     /// Status of context
     pub status: Status,
     /// Context running or not
@@ -152,8 +146,6 @@ pub struct Context {
     pub cwd: Arc<Mutex<Vec<u8>>>,
     /// The process environment
     pub env: Arc<Mutex<BTreeMap<Box<[u8]>, Arc<Mutex<Vec<u8>>>>>>,
-    /// The open files in the scheme
-    pub files: Arc<Mutex<Vec<Option<FileDescriptor>>>>,
     /// Singal actions
     pub actions: Arc<Mutex<Vec<(SigAction, usize)>>>,
 }
@@ -166,10 +158,8 @@ impl Context {
             ppid: ContextId::from(0),
             ruid: 0,
             rgid: 0,
-            rns: SchemeNamespace::from(0),
             euid: 0,
             egid: 0,
-            ens: SchemeNamespace::from(0),
             status: Status::Blocked,
             running: false,
             cpu_id: None,
@@ -192,7 +182,6 @@ impl Context {
             name: Arc::new(Mutex::new(Vec::new().into_boxed_slice())),
             cwd: Arc::new(Mutex::new(Vec::new())),
             env: Arc::new(Mutex::new(BTreeMap::new())),
-            files: Arc::new(Mutex::new(Vec::new())),
             actions: Arc::new(Mutex::new(vec![
                 (
                 SigAction {
@@ -299,76 +288,6 @@ impl Context {
             true
         } else {
             false
-        }
-    }
-
-    /// Add a file to the lowest available slot.
-    /// Return the file descriptor number or None if no slot was found
-    pub fn add_file(&self, file: FileDescriptor) -> Option<FileHandle> {
-        self.add_file_min(file, 0)
-    }
-
-    /// Add a file to the lowest available slot greater than or equal to min.
-    /// Return the file descriptor number or None if no slot was found
-    pub fn add_file_min(&self, file: FileDescriptor, min: usize) -> Option<FileHandle> {
-        let mut files = self.files.lock();
-        for (i, file_option) in files.iter_mut().enumerate() {
-            if file_option.is_none() && i >= min {
-                *file_option = Some(file);
-                return Some(FileHandle::from(i));
-            }
-        }
-        let len = files.len();
-        if len < super::CONTEXT_MAX_FILES {
-            if len >= min {
-                files.push(Some(file));
-                Some(FileHandle::from(len))
-            } else {
-                drop(files);
-                self.insert_file(FileHandle::from(min), file)
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Get a file
-    pub fn get_file(&self, i: FileHandle) -> Option<FileDescriptor> {
-        let files = self.files.lock();
-        if i.into() < files.len() {
-            files[i.into()].clone()
-        } else {
-            None
-        }
-    }
-
-    /// Insert a file with a specific handle number. This is used by dup2
-    /// Return the file descriptor number or None if the slot was not empty, or i was invalid
-    pub fn insert_file(&self, i: FileHandle, file: FileDescriptor) -> Option<FileHandle> {
-        let mut files = self.files.lock();
-        if i.into() < super::CONTEXT_MAX_FILES {
-            while i.into() >= files.len() {
-                files.push(None);
-            }
-            if files[i.into()].is_none() {
-                files[i.into()] = Some(file);
-                Some(i)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Remove a file
-    // TODO: adjust files vector to smaller size if possible
-    pub fn remove_file(&self, i: FileHandle) -> Option<FileDescriptor> {
-        let mut files = self.files.lock();
-        if i.into() < files.len() {
-            files[i.into()].take()
-        } else {
-            None
         }
     }
 }

@@ -22,17 +22,11 @@ mod list;
 /// Context switch function
 mod switch;
 
-/// File struct - defines a scheme and a file number
-pub mod file;
-
 /// Memory struct - contains a set of pages for a context
 pub mod memory;
 
 /// Signal handling
 pub mod signal;
-
-/// Timeout handling
-pub mod timeout;
 
 /// Limit on number of contexts
 pub const CONTEXT_MAX_CONTEXTS: usize = (isize::max_value() as usize) - 1;

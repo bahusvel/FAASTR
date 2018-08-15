@@ -11,18 +11,17 @@ pub use self::error::*;
 pub use self::flag::*;
 pub use self::io::*;
 pub use self::number::*;
-pub use self::scheme::*;
 
 #[cfg(target_arch = "arm")]
-#[path="arch/arm.rs"]
+#[path = "arch/arm.rs"]
 mod arch;
 
 #[cfg(target_arch = "x86")]
-#[path="arch/x86.rs"]
+#[path = "arch/x86.rs"]
 mod arch;
 
 #[cfg(target_arch = "x86_64")]
-#[path="arch/x86_64.rs"]
+#[path = "arch/x86_64.rs"]
 mod arch;
 
 /// Function definitions
@@ -42,6 +41,3 @@ pub mod io;
 
 /// Call numbers used by each system call
 pub mod number;
-
-/// A trait useful for scheme handlers
-pub mod scheme;

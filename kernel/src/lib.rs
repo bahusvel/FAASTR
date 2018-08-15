@@ -2,6 +2,8 @@
 //!
 //! The Redox OS Kernel is a microkernel that supports `x86_64` systems and
 //! provides Unix-like syscalls for primarily Rust applications
+// FIXME this is wrong, and is not a solution, I need to implement Debug properly on affected structs
+#![allow(safe_packed_borrows)]
 
 //#![deny(warnings)]
 #![cfg_attr(feature = "clippy", allow(if_same_then_else))]
@@ -47,8 +49,6 @@ extern crate slab_allocator;
 
 use core::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 
-use scheme::{FileHandle, SchemeNamespace};
-
 pub use consts::*;
 
 #[macro_use]
@@ -80,9 +80,6 @@ pub mod devices;
 #[cfg(not(feature = "doc"))]
 pub mod elf;
 
-/// Event handling
-pub mod event;
-
 /// External functions
 pub mod externs;
 
@@ -92,9 +89,6 @@ pub mod memory;
 /// Panic
 #[cfg(not(any(feature = "doc", test)))]
 pub mod panic;
-
-/// Schemes, filesystem handlers
-pub mod scheme;
 
 /// Synchronization primitives
 pub mod sync;
@@ -131,25 +125,18 @@ pub fn cpu_count() -> usize {
     CPU_COUNT.load(Ordering::Relaxed)
 }
 
+include!(concat!(env!("OUT_DIR"), "/gen.rs"));
+
+
 /// Initialize userspace by running the initfs:bin/init process
 /// This function will also set the CWD to initfs:bin and open debug: as stdio
 pub extern "C" fn userspace_init() {
-    assert_eq!(syscall::chdir(b"initfs:"), Ok(0));
 
-    assert_eq!(
-        syscall::open(b"debug:", syscall::flag::O_RDONLY).map(FileHandle::into),
-        Ok(0)
-    );
-    assert_eq!(
-        syscall::open(b"debug:", syscall::flag::O_WRONLY).map(FileHandle::into),
-        Ok(1)
-    );
-    assert_eq!(
-        syscall::open(b"debug:", syscall::flag::O_WRONLY).map(FileHandle::into),
-        Ok(2)
-    );
-
-    syscall::exec(b"initfs:/exit", &[]).expect("failed to execute init");
+    syscall::exec(
+        b"exit",
+        initfs_get_file(b"/exit").expect("Could not find exit in initfs"),
+        &[],
+    ).expect("failed to execute init");
 
     panic!("init returned");
 }
@@ -180,8 +167,6 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     match context::contexts_mut().spawn(userspace_init) {
         Ok(context_lock) => {
             let mut context = context_lock.write();
-            context.rns = SchemeNamespace::from(1);
-            context.ens = SchemeNamespace::from(1);
             context.status = context::Status::Runnable;
         }
         Err(err) => {

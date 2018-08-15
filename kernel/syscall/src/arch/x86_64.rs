@@ -62,8 +62,14 @@ pub unsafe fn syscall4(mut a: usize, b: usize, c: usize, d: usize, e: usize) -> 
     Error::demux(a)
 }
 
-pub unsafe fn syscall5(mut a: usize, b: usize, c: usize, d: usize, e: usize, f: usize)
-                       -> Result<usize> {
+pub unsafe fn syscall5(
+    mut a: usize,
+    b: usize,
+    c: usize,
+    d: usize,
+    e: usize,
+    f: usize,
+) -> Result<usize> {
     asm!("int 0x80"
         : "={rax}"(a)
         : "{rax}"(a), "{rbx}"(b), "{rcx}"(c), "{rdx}"(d), "{rsi}"(e), "{rdi}"(f)

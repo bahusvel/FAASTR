@@ -4,19 +4,18 @@
 
 extern crate syscall;
 
-pub use self::syscall::{data, error, flag, io, number, scheme};
+pub use self::syscall::{data, error, flag, io, number};
 
 pub use self::driver::*;
-pub use self::fs::*;
 pub use self::futex::futex;
-pub use self::privilege::*;
 pub use self::process::*;
 pub use self::time::*;
 pub use self::validate::*;
 
 use self::data::{SigAction, TimeSpec};
-use self::error::{Error, Result, ENOSYS};
+use self::error::{Error, Result, ENOSYS, EINVAL};
 use self::number::*;
+use alloc::str::from_utf8;
 
 use context::ContextId;
 use interrupt::syscall::SyscallStack;
@@ -27,14 +26,8 @@ pub mod debug;
 /// Driver syscalls
 pub mod driver;
 
-/// Filesystem syscalls
-pub mod fs;
-
 /// Fast userspace mutex
 pub mod futex;
-
-/// Privilege syscalls
-pub mod privilege;
 
 /// Process syscalls
 pub mod process;
@@ -64,7 +57,7 @@ pub fn syscall(
         c: usize,
         d: usize,
         e: usize,
-        _f: usize,
+        f: usize,
         bp: usize,
         stack: &mut SyscallStack,
     ) -> Result<usize> {
@@ -104,6 +97,12 @@ pub fn syscall(
                 )
             }
             */
+            SYS_WRITE => {
+                let slice = validate_slice(b as *const u8, c)?;
+                let string = from_utf8(slice).map_err(|_| Error::new(EINVAL))?;
+                println!("{:?}", string);
+                Ok(0)
+            }
             SYS_BRK => brk(b),
             SYS_GETPID => getpid().map(ContextId::into),
             SYS_CLONE => clone(b, bp).map(ContextId::into),
@@ -113,7 +112,9 @@ pub fn syscall(
             SYS_EXECVE => {
                 exec(
                     validate_slice(b as *const u8, c)?,
-                    validate_slice(d as *const [usize; 2], e)?,
+                    validate_slice(d as *const u8, e)?,
+                    // FIXME this is wrong
+                    validate_slice(f as *const [usize; 2], e)?,
                 )
             }
             SYS_IOPL => iopl(b, stack),
@@ -174,7 +175,16 @@ pub fn syscall(
 
         println!("{}", debug::format_call(a, b, c, d, e, f));
     }
+
+
     */
+    {
+        let contexts = ::context::contexts();
+        if let Some(context_lock) = contexts.current() {
+            let context = context_lock.read();
+            println!("Context {:?} in syscall {:?}", context.name, a);
+        }
+    }
 
     // The next lines set the current syscall in the context struct, then once the inner() function
     // completes, we set the current syscall to none.

@@ -14,10 +14,9 @@ use start::usermode;
 use interrupt;
 use context;
 use context::{ContextId, WaitpidKey};
-use context::file::FileDescriptor;
 #[cfg(not(feature = "doc"))]
 use elf::{self, program_header};
-use scheme::FileHandle;
+
 use syscall;
 use syscall::data::{SigAction, Stat};
 use syscall::error::*;
@@ -65,10 +64,8 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
         let pgid;
         let ruid;
         let rgid;
-        let rns;
         let euid;
         let egid;
-        let ens;
         let mut cpu_id = None;
         let arch;
         let vfork;
@@ -84,7 +81,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
         let name;
         let cwd;
         let env;
-        let files;
         let actions;
 
         // Copy from old process
@@ -97,10 +93,8 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
             pgid = context.pgid;
             ruid = context.ruid;
             rgid = context.rgid;
-            rns = context.rns;
             euid = context.euid;
             egid = context.egid;
-            ens = context.ens;
 
             if flags & CLONE_VM == CLONE_VM {
                 cpu_id = context.cpu_id;
@@ -286,34 +280,10 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                 }
                 env = Arc::new(Mutex::new(new_env));
             }
-
-            if flags & CLONE_FILES == CLONE_FILES {
-                files = Arc::clone(&context.files);
-            } else {
-                files = Arc::new(Mutex::new(context.files.lock().clone()));
-            }
-
             if flags & CLONE_SIGHAND == CLONE_SIGHAND {
                 actions = Arc::clone(&context.actions);
             } else {
                 actions = Arc::new(Mutex::new(context.actions.lock().clone()));
-            }
-        }
-
-        // If not cloning files, dup to get a new number from scheme
-        // This has to be done outside the context lock to prevent deadlocks
-        if flags & CLONE_FILES == 0 {
-            for (_fd, file_option) in files.lock().iter_mut().enumerate() {
-                let new_file_option = if let Some(ref file) = *file_option {
-                    Some(FileDescriptor {
-                        description: Arc::clone(&file.description),
-                        cloexec: file.cloexec,
-                    })
-                } else {
-                    None
-                };
-
-                *file_option = new_file_option;
             }
         }
 
@@ -341,10 +311,8 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
             context.ppid = ppid;
             context.ruid = ruid;
             context.rgid = rgid;
-            context.rns = rns;
             context.euid = euid;
             context.egid = egid;
-            context.ens = ens;
 
             context.cpu_id = cpu_id;
 
@@ -538,8 +506,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
 
             context.env = env;
 
-            context.files = files;
-
             context.actions = actions;
         }
     }
@@ -594,26 +560,12 @@ fn empty(context: &mut context::Context, reaping: bool) {
     }
 }
 
-struct ExecFile(FileHandle);
-
-impl Drop for ExecFile {
-    fn drop(&mut self) {
-        let _ = syscall::close(self.0);
-    }
-}
-
-fn exec_noreturn(
-    canonical: Box<[u8]>,
-    setuid: Option<u32>,
-    setgid: Option<u32>,
-    data: Box<[u8]>,
-    args: Box<[Box<[u8]>]>,
-) -> ! {
+fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) -> ! {
     let entry;
     let mut sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
 
     {
-        let (vfork, ppid, files) = {
+        let (vfork, ppid) = {
             let contexts = context::contexts();
             let context_lock = contexts.current().ok_or(Error::new(ESRCH)).expect(
                 "exec_noreturn pid not found",
@@ -624,14 +576,6 @@ fn exec_noreturn(
             context.name = Arc::new(Mutex::new(canonical));
 
             empty(&mut context, false);
-
-            if let Some(uid) = setuid {
-                context.euid = uid;
-            }
-
-            if let Some(gid) = setgid {
-                context.egid = gid;
-            }
 
             // Map and copy new segments
             let mut tls_option = None;
@@ -826,23 +770,8 @@ fn exec_noreturn(
             let vfork = context.vfork;
             context.vfork = false;
 
-            let files = Arc::clone(&context.files);
-
-            (vfork, context.ppid, files)
+            (vfork, context.ppid)
         };
-
-        for (fd, file_option) in files.lock().iter_mut().enumerate() {
-            let mut cloexec = false;
-            if let Some(ref file) = *file_option {
-                if file.cloexec {
-                    cloexec = true;
-                }
-            }
-
-            if cloexec {
-                let _ = file_option.take().unwrap().close();
-            }
-        }
 
         if vfork {
             let contexts = context::contexts();
@@ -863,93 +792,13 @@ fn exec_noreturn(
     }
 }
 
-pub fn exec(path: &[u8], arg_ptrs: &[[usize; 2]]) -> Result<usize> {
+pub fn exec(name: &[u8], data: &[u8], arg_ptrs: &[[usize; 2]]) -> Result<usize> {
     let mut args = Vec::new();
     for arg_ptr in arg_ptrs {
         let arg = validate_slice(arg_ptr[0] as *const u8, arg_ptr[1])?;
         // Argument must be moved into kernel space before exec unmaps all memory
         args.push(arg.to_vec().into_boxed_slice());
     }
-
-    let (uid, gid, mut canonical) = {
-        let contexts = context::contexts();
-        let context_lock = contexts.current().ok_or(Error::new(ESRCH))?;
-        let context = context_lock.read();
-        (context.euid, context.egid, context.canonicalize(path))
-    };
-
-    let mut stat: Stat;
-    let mut data: Vec<u8>;
-    loop {
-        let file = ExecFile(syscall::open(&canonical, syscall::flag::O_RDONLY)?);
-
-        stat = Stat::default();
-        syscall::file_op_mut_slice(syscall::number::SYS_FSTAT, file.0, &mut stat)?;
-
-        let mut perm = stat.st_mode & 0o7;
-        if stat.st_uid == uid {
-            perm |= (stat.st_mode >> 6) & 0o7;
-        }
-        if stat.st_gid == gid {
-            perm |= (stat.st_mode >> 3) & 0o7;
-        }
-        if uid == 0 {
-            perm |= 0o7;
-        }
-
-        if perm & 0o1 != 0o1 {
-            return Err(Error::new(EACCES));
-        }
-
-        //TODO: Only read elf header, not entire file. Then read required segments
-        data = vec![0; stat.st_size as usize];
-        syscall::file_op_mut_slice(syscall::number::SYS_READ, file.0, &mut data)?;
-        drop(file);
-
-        if data.starts_with(b"#!") {
-            if let Some(line) = data[2..].split(|&b| b == b'\n').next() {
-                // Strip whitespace
-                let line = &line[line.iter().position(|&b| b != b' ').unwrap_or(0)..];
-                let executable = line.split(|x| *x == b' ').next().unwrap_or(b"");
-                let mut parts = line.split(|x| *x == b' ')
-                    .map(|x| x.iter().cloned().collect::<Vec<_>>().into_boxed_slice())
-                    .collect::<Vec<_>>();
-                if !args.is_empty() {
-                    args.remove(0);
-                }
-                parts.push(path.to_vec().into_boxed_slice());
-                parts.extend(args.iter().cloned());
-                args = parts;
-                canonical = {
-                    let contexts = context::contexts();
-                    let context_lock = contexts.current().ok_or(Error::new(ESRCH))?;
-                    let context = context_lock.read();
-                    context.canonicalize(executable)
-                };
-            } else {
-                println!(
-                    "invalid script {}",
-                    unsafe { str::from_utf8_unchecked(path) }
-                );
-                return Err(Error::new(ENOEXEC));
-            }
-        } else {
-            break;
-        }
-    }
-
-    // Set UID and GID are determined after resolving any hashbangs
-    let setuid = if stat.st_mode & syscall::flag::MODE_SETUID == syscall::flag::MODE_SETUID {
-        Some(stat.st_uid)
-    } else {
-        None
-    };
-
-    let setgid = if stat.st_mode & syscall::flag::MODE_SETGID == syscall::flag::MODE_SETGID {
-        Some(stat.st_gid)
-    } else {
-        None
-    };
 
     // The argument list is limited to avoid using too much userspace stack
     // This check is done last to allow all hashbangs to be resolved
@@ -985,7 +834,7 @@ pub fn exec(path: &[u8], arg_ptrs: &[[usize; 2]]) -> Result<usize> {
         Err(err) => {
             println!(
                 "exec: failed to execute {}: {}",
-                unsafe { str::from_utf8_unchecked(path) },
+                unsafe { str::from_utf8_unchecked(name) },
                 err
             );
             return Err(Error::new(ENOEXEC));
@@ -993,17 +842,15 @@ pub fn exec(path: &[u8], arg_ptrs: &[[usize; 2]]) -> Result<usize> {
     }
 
     // Drop so that usage is not allowed after unmapping context
-    drop(path);
+    drop(name);
     drop(arg_ptrs);
 
     // This is the point of no return, quite literaly. Any checks for validity need
     // to be done before, and appropriate errors returned. Otherwise, we have nothing
     // to return to.
     exec_noreturn(
-        canonical.into_boxed_slice(),
-        setuid,
-        setgid,
-        data.into_boxed_slice(),
+        Vec::from(name).into_boxed_slice(),
+        Vec::from(data).into_boxed_slice(),
         args.into_boxed_slice(),
     );
 }
@@ -1018,25 +865,10 @@ pub fn exit(status: usize) -> ! {
             Arc::clone(&context_lock)
         };
 
-        let mut close_files = Vec::new();
         let pid = {
-            let mut context = context_lock.write();
-            // FIXME: Looks like a race condition.
-            // Is it possible for Arc::strong_count to return 1 to two contexts that exit at the
-            // same time, or return 2 to both, thus either double closing or leaking the files?
-            if Arc::strong_count(&context.files) == 1 {
-                mem::swap(context.files.lock().deref_mut(), &mut close_files);
-            }
-            context.files = Arc::new(Mutex::new(Vec::new()));
+            let mut context = context_lock.read();
             context.id
         };
-
-        // Files must be closed while context is valid so that messages can be passed
-        for (fd, file_option) in close_files.drain(..).enumerate() {
-            if let Some(file) = file_option {
-                let _ = file.close();
-            }
-        }
 
         // PGID and PPID must be grabbed after close, as context switches could change PGID or PPID if parent exits
         let (pgid, ppid) = {

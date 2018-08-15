@@ -1,7 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 
 use context;
-use context::timeout;
 use device::{local_apic, pic};
 use device::serial::{COM1, COM2};
 use time;
@@ -10,10 +9,6 @@ use time;
 pub static PIT_TICKS: AtomicUsize = ATOMIC_USIZE_INIT;
 
 unsafe fn trigger(irq: u8) {
-    extern "C" {
-        fn irq_trigger(irq: u8);
-    }
-
     if irq < 16 {
         if irq >= 8 {
             pic::SLAVE.mask_set(irq - 8);
@@ -24,8 +19,6 @@ unsafe fn trigger(irq: u8) {
             pic::MASTER.ack();
         }
     }
-
-    irq_trigger(irq);
 }
 
 pub unsafe fn acknowledge(irq: usize) {
@@ -56,9 +49,6 @@ interrupt!(pit, {
     }
 
     pic::MASTER.ack();
-
-    // Any better way of doing this?
-    timeout::trigger();
 
     if PIT_TICKS.fetch_add(1, Ordering::SeqCst) >= 10 {
         let _ = context::switch();

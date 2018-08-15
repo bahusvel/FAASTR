@@ -61,8 +61,14 @@ pub unsafe fn syscall4(mut a: usize, b: usize, c: usize, d: usize, e: usize) -> 
     Error::demux(a)
 }
 
-pub unsafe fn syscall5(mut a: usize, b: usize, c: usize, d: usize, e: usize, f: usize)
-                       -> Result<usize> {
+pub unsafe fn syscall5(
+    mut a: usize,
+    b: usize,
+    c: usize,
+    d: usize,
+    e: usize,
+    f: usize,
+) -> Result<usize> {
     asm!("swi $$0"
         : "={r0}"(a)
         : "{r7}"(a), "{r0}"(b), "{r1}"(c), "{r2}"(d), "{r3}"(e), "{r4}"(f)

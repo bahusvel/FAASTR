@@ -12,13 +12,14 @@ pub struct Mmio<T> {
 impl<T> Mmio<T> {
     /// Create a new Mmio without initializing
     pub fn new() -> Self {
-        Mmio {
-            value: unsafe { uninitialized() }
-        }
+        Mmio { value: unsafe { uninitialized() } }
     }
 }
 
-impl<T> Io for Mmio<T> where T: Copy + PartialEq + BitAnd<Output = T> + BitOr<Output = T> + Not<Output = T> {
+impl<T> Io for Mmio<T>
+where
+    T: Copy + PartialEq + BitAnd<Output = T> + BitOr<Output = T> + Not<Output = T>,
+{
     type Value = T;
 
     fn read(&self) -> T {

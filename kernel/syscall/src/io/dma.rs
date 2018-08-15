@@ -5,7 +5,7 @@ use Result;
 
 struct PhysBox {
     address: usize,
-    size: usize
+    size: usize,
 }
 
 impl PhysBox {
@@ -13,7 +13,7 @@ impl PhysBox {
         let address = unsafe { ::physalloc(size)? };
         Ok(PhysBox {
             address: address,
-            size: size
+            size: size,
         })
     }
 }
@@ -26,27 +26,31 @@ impl Drop for PhysBox {
 
 pub struct Dma<T> {
     phys: PhysBox,
-    virt: *mut T
+    virt: *mut T,
 }
 
 impl<T> Dma<T> {
     pub fn new(value: T) -> Result<Dma<T>> {
         let phys = PhysBox::new(mem::size_of::<T>())?;
         let virt = unsafe { ::physmap(phys.address, phys.size, ::MAP_WRITE)? } as *mut T;
-        unsafe { ptr::write(virt, value); }
+        unsafe {
+            ptr::write(virt, value);
+        }
         Ok(Dma {
             phys: phys,
-            virt: virt
+            virt: virt,
         })
     }
 
     pub fn zeroed() -> Result<Dma<T>> {
         let phys = PhysBox::new(mem::size_of::<T>())?;
         let virt = unsafe { ::physmap(phys.address, phys.size, ::MAP_WRITE)? } as *mut T;
-        unsafe { ptr::write_bytes(virt as *mut u8, 0, phys.size); }
+        unsafe {
+            ptr::write_bytes(virt as *mut u8, 0, phys.size);
+        }
         Ok(Dma {
             phys: phys,
-            virt: virt
+            virt: virt,
         })
     }
 
@@ -70,7 +74,9 @@ impl<T> DerefMut for Dma<T> {
 
 impl<T> Drop for Dma<T> {
     fn drop(&mut self) {
-        unsafe { drop(ptr::read(self.virt)); }
+        unsafe {
+            drop(ptr::read(self.virt));
+        }
         let _ = unsafe { ::physunmap(self.virt as usize) };
     }
 }
