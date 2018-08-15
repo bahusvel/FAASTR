@@ -38,13 +38,24 @@ impl Dmar {
                 match dmar_entry {
                     DmarEntry::Drhd(dmar_drhd) => {
                         let drhd = dmar_drhd.get(active_table);
-
-                        println!("VER: {:X}", drhd.version);
-                        println!("CAP: {:X}", drhd.cap);
-                        println!("EXT_CAP: {:X}", drhd.ext_cap);
-                        println!("GCMD: {:X}", drhd.gl_cmd);
-                        println!("GSTS: {:X}", drhd.gl_sts);
-                        println!("RT: {:X}", drhd.root_table);
+                        println!("VER: {:X}", {
+                            drhd.version
+                        });
+                        println!("CAP: {:X}", {
+                            drhd.cap
+                        });
+                        println!("EXT_CAP: {:X}", {
+                            drhd.ext_cap
+                        });
+                        println!("GCMD: {:X}", {
+                            drhd.gl_cmd
+                        });
+                        println!("GSTS: {:X}", {
+                            drhd.gl_sts
+                        });
+                        println!("RT: {:X}", {
+                            drhd.root_table
+                        });
                     }
                     _ => (),
                 }

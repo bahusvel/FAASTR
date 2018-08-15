@@ -1,4 +1,4 @@
-use core::alloc::{Alloc, GlobalAlloc, Layout};
+use core::alloc::{GlobalAlloc, Layout};
 use core::{cmp, slice};
 
 use super::FONT;

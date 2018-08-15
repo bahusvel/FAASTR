@@ -136,7 +136,7 @@ pub unsafe fn init(
                 let page = Page::containing_address(VirtualAddress::new(frame.start_address().get() + ::KERNEL_OFFSET));
                 let result = mapper.map_to(page, frame, EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE);
                 // The flush can be ignored as this is not the active table. See later active_table.switch
-                unsafe { result.ignore(); }
+                result.ignore();
             }
         }
 
@@ -178,7 +178,7 @@ pub unsafe fn init(
                 let page = Page::containing_address(VirtualAddress::new(virt_addr));
                 let result = mapper.map_to(page, frame, flags);
                 // The flush can be ignored as this is not the active table. See later active_table.switch
-                unsafe { result.ignore(); }
+                result.ignore();
             }
         }
 

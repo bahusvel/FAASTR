@@ -22,7 +22,6 @@
 #![feature(const_max_value)]
 #![feature(const_size_of)]
 #![feature(core_intrinsics)]
-#![feature(global_allocator)]
 #![feature(integer_atomics)]
 #![feature(lang_items)]
 #![feature(naked_functions)]
@@ -46,9 +45,7 @@ extern crate spin;
 #[cfg(feature = "slab")]
 extern crate slab_allocator;
 
-use alloc::arc::Arc;
 use core::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
-use spin::Mutex;
 
 use scheme::{FileHandle, SchemeNamespace};
 

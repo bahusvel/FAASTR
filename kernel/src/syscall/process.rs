@@ -1,7 +1,7 @@
 use alloc::arc::Arc;
 use alloc::boxed::Box;
 use alloc::{BTreeMap, Vec};
-use core::alloc::{Alloc, GlobalAlloc, Layout};
+use core::alloc::{GlobalAlloc, Layout};
 use core::{intrinsics, mem, str};
 use core::ops::DerefMut;
 use spin::Mutex;
@@ -1143,24 +1143,6 @@ pub fn getpid() -> Result<ContextId> {
     Ok(context.id)
 }
 
-pub fn getpgid(pid: ContextId) -> Result<ContextId> {
-    let contexts = context::contexts();
-    let context_lock = if pid.into() == 0 {
-        contexts.current().ok_or(Error::new(ESRCH))?
-    } else {
-        contexts.get(pid).ok_or(Error::new(ESRCH))?
-    };
-    let context = context_lock.read();
-    Ok(context.pgid)
-}
-
-pub fn getppid() -> Result<ContextId> {
-    let contexts = context::contexts();
-    let context_lock = contexts.current().ok_or(Error::new(ESRCH))?;
-    let context = context_lock.read();
-    Ok(context.ppid)
-}
-
 pub fn kill(pid: ContextId, sig: usize) -> Result<usize> {
     let (ruid, euid, current_pgid) = {
         let contexts = context::contexts();
@@ -1169,7 +1151,7 @@ pub fn kill(pid: ContextId, sig: usize) -> Result<usize> {
         (context.ruid, context.euid, context.pgid)
     };
 
-    if sig >= 0 && sig < 0x7F {
+    if sig < 0x7F {
         let mut found = 0;
         let mut sent = 0;
 
@@ -1254,34 +1236,6 @@ pub fn kill(pid: ContextId, sig: usize) -> Result<usize> {
         }
     } else {
         Err(Error::new(EINVAL))
-    }
-}
-
-pub fn setpgid(pid: ContextId, pgid: ContextId) -> Result<usize> {
-    let contexts = context::contexts();
-
-    let current_pid = {
-        let context_lock = contexts.current().ok_or(Error::new(ESRCH))?;
-        let context = context_lock.read();
-        context.id
-    };
-
-    let context_lock = if pid.into() == 0 {
-        contexts.current().ok_or(Error::new(ESRCH))?
-    } else {
-        contexts.get(pid).ok_or(Error::new(ESRCH))?
-    };
-
-    let mut context = context_lock.write();
-    if context.id == current_pid || context.ppid == current_pid {
-        if pgid.into() == 0 {
-            context.pgid = context.id;
-        } else {
-            context.pgid = pgid;
-        }
-        Ok(0)
-    } else {
-        Err(Error::new(ESRCH))
     }
 }
 
