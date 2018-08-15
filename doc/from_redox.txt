@@ -142,6 +142,11 @@ This is where context init basically ends, further points of entry into context 
 
 * It then checks each section for being loaded not above 2GB, because of TLS address, which is stupid..... I wont have TLS in userspace, but this is honestly stupid.
 
+* The offending entries are the user TCB and the kernel TLS whose offsets are:
+pub const USER_TCB_OFFSET: usize = 0xB000_0000;
+pub const KERNEL_PERCPU_OFFSET: usize = 0xC000_0000;
+Why are they there? Is there a problem with using 64bit fs?
+
 * And after its done all the checking it passes the name, uid and gid, the elf data and arguments to the inner function - exec_noreturn. So this is basically the useful function to me, everything before I most dont care, except for that TLS check, BUT THAT THING SO DUMB!!!!!!!!!!!!
 
 * Inner exec function, sets the name, as passed by the top function.... thats stupid again, why does it pass it and not just set it? Sets the uid and gid, same story. And then actually does useful things by loading the elf segments into the process!!!! yay! It also maps TLS, but I wont have no TLS in userspace. Then it maps the heap, the stack and the signal stack. And then the TLS, I guess before it just parsed the TLS and didn't map it. It then places the arguments in a dedicated section and remaps it to the user. Sets up some default sigactions.
@@ -152,4 +157,10 @@ This is where context init basically ends, further points of entry into context 
 
 * Interestingly it pushes these memory regions into executable image object. I guess it is just for ownership or something.
 
-* Continue exploring from fork/clone.
+## Clone
+
+* For the initial part clone does exactly what you would expect, creates a copy of all the things for a specific context, then assigns them to the new context. If vforking() it will block the current context and set the vfork() flag, blocking simply makes it not runnable... When the child context returns (or exec but I don't care about exec) it will check this vfork flag and unblock the parent. Simple, but perfect.
+
+* On Unix's the only way to spawn a new process is by clonning some existing one, and then execing the new thing. What's interesting is that page table not only contains the user's mapping but also the kernel's mappings. So those too need to be cloned. That means when I will want to spawn a new function I too will need to clone stuff. Although I should come up with as light weight way as possible to generate a similar looking page table without copying everything. Especially to avoid TLB flush.
+
+* So code in clone is actually really important, it is the only true code that sets up the brand new context with guts and all. So I will be sure to keep that in.
