@@ -1,8 +1,7 @@
-use alloc::allocator::{Alloc, Layout};
 use alloc::arc::Arc;
 use alloc::boxed::Box;
-use alloc::heap::Heap;
 use alloc::{BTreeMap, Vec};
+use core::alloc::{Alloc, GlobalAlloc, Layout};
 use core::{intrinsics, mem, str};
 use core::ops::DerefMut;
 use spin::Mutex;
@@ -111,8 +110,9 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
 
             if let Some(ref fx) = context.kfx {
                 let mut new_fx = unsafe {
-                    Box::from_raw(Heap.alloc(Layout::from_size_align_unchecked(512, 16))
-                        .unwrap() as *mut [u8; 512])
+                    Box::from_raw(::ALLOCATOR.alloc(
+                        Layout::from_size_align_unchecked(512, 16),
+                    ) as *mut [u8; 512])
                 };
                 for (new_b, b) in new_fx.iter_mut().zip(fx.iter()) {
                     *new_b = *b;
@@ -307,7 +307,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                 let new_file_option = if let Some(ref file) = *file_option {
                     Some(FileDescriptor {
                         description: Arc::clone(&file.description),
-                        event: None,
                         cloexec: file.cloexec,
                     })
                 } else {
@@ -841,7 +840,7 @@ fn exec_noreturn(
             }
 
             if cloexec {
-                let _ = file_option.take().unwrap().close(FileHandle::from(fd));
+                let _ = file_option.take().unwrap().close();
             }
         }
 
@@ -1035,7 +1034,7 @@ pub fn exit(status: usize) -> ! {
         // Files must be closed while context is valid so that messages can be passed
         for (fd, file_option) in close_files.drain(..).enumerate() {
             if let Some(file) = file_option {
-                let _ = file.close(FileHandle::from(fd));
+                let _ = file.close();
             }
         }
 
@@ -1386,6 +1385,24 @@ pub fn waitpid(pid: ContextId, status_ptr: usize, flags: usize) -> Result<Contex
 
     loop {
         let res_opt = if pid.into() == 0 {
+            // Check for existence of child
+            {
+                let mut found = false;
+
+                let contexts = context::contexts();
+                for (_id, context_lock) in contexts.iter() {
+                    let context = context_lock.read();
+                    if context.ppid == ppid {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if !found {
+                    return Err(Error::new(ECHILD));
+                }
+            }
+
             if flags & WNOHANG == WNOHANG {
                 if let Some((_wid, (w_pid, status))) = waitpid.receive_any_nonblock() {
                     grim_reaper(w_pid, status)
@@ -1398,7 +1415,25 @@ pub fn waitpid(pid: ContextId, status_ptr: usize, flags: usize) -> Result<Contex
             }
         } else if (pid.into() as isize) < 0 {
             let pgid = ContextId::from(-(pid.into() as isize) as usize);
-            //TODO: Check for existence of child in process group PGID
+
+            // Check for existence of child in process group PGID
+            {
+                let mut found = false;
+
+                let contexts = context::contexts();
+                for (_id, context_lock) in contexts.iter() {
+                    let context = context_lock.read();
+                    if context.pgid == pgid {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if !found {
+                    return Err(Error::new(ECHILD));
+                }
+            }
+
             if flags & WNOHANG == WNOHANG {
                 if let Some((w_pid, status)) =
                     waitpid.receive_nonblock(&WaitpidKey {

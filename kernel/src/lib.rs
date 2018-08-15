@@ -17,7 +17,6 @@
 #![feature(asm)]
 #![feature(collections)]
 #![feature(concat_idents)]
-#![feature(conservative_impl_trait)]
 #![feature(const_atomic_usize_new)]
 #![feature(const_fn)]
 #![feature(const_max_value)]
@@ -28,6 +27,7 @@
 #![feature(lang_items)]
 #![feature(naked_functions)]
 #![feature(never_type)]
+#![feature(panic_implementation)]
 #![feature(ptr_internals)]
 #![feature(thread_local)]
 #![feature(unique)]
@@ -43,6 +43,7 @@ extern crate bitflags;
 extern crate goblin;
 extern crate linked_list_allocator;
 extern crate spin;
+#[cfg(feature = "slab")]
 extern crate slab_allocator;
 
 use alloc::arc::Arc;
@@ -81,6 +82,9 @@ pub mod devices;
 /// ELF file parsing
 #[cfg(not(feature = "doc"))]
 pub mod elf;
+
+/// Event handling
+pub mod event;
 
 /// External functions
 pub mod externs;
@@ -158,11 +162,13 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     CPU_ID.store(0, Ordering::SeqCst);
     CPU_COUNT.store(cpus, Ordering::SeqCst);
 
+    //Initialize the first context, stored in kernel/src/context/mod.rs
     context::init();
 
     let pid = syscall::getpid();
     println!("BSP: {:?} {}", pid, cpus);
     println!("Env: {:?}", ::core::str::from_utf8(env));
+
     println!("Denis was here");
 
     loop {
@@ -179,7 +185,6 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
             context.ens = SchemeNamespace::from(1);
             context.status = context::Status::Runnable;
 
-            /* key value environment parsing, what is the environment?
             let mut context_env = context.env.lock();
             for line in env.split(|b| *b == b'\n') {
                 let mut parts = line.splitn(2, |b| *b == b'=');
@@ -192,7 +197,6 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
                     }
                 }
             }
-            */
         }
         Err(err) => {
             panic!("failed to spawn userspace_init: {:?}", err);
@@ -222,6 +226,8 @@ pub fn kmain_ap(id: usize) -> ! {
 
         let pid = syscall::getpid();
         println!("AP {}: {:?}", id, pid);
+
+        println!("Denis was here");
 
         loop {
             unsafe {

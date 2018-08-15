@@ -1,15 +1,28 @@
 use core::mem;
-use x86::dtables::{self, DescriptorTablePointer};
+use x86::current::irq::IdtEntry as X86IdtEntry;
+use x86::shared::dtables::{self, DescriptorTablePointer};
 
 use interrupt::*;
 
-pub static mut IDTR: DescriptorTablePointer = DescriptorTablePointer { limit: 0, base: 0 };
+pub static mut INIT_IDTR: DescriptorTablePointer<X86IdtEntry> = DescriptorTablePointer {
+    limit: 0,
+    base: 0 as *const X86IdtEntry,
+};
+
+pub static mut IDTR: DescriptorTablePointer<X86IdtEntry> = DescriptorTablePointer {
+    limit: 0,
+    base: 0 as *const X86IdtEntry,
+};
 
 pub static mut IDT: [IdtEntry; 256] = [IdtEntry::new(); 256];
 
 pub unsafe fn init() {
+    dtables::lidt(&INIT_IDTR);
+}
+
+pub unsafe fn init_paging() {
     IDTR.limit = (IDT.len() * mem::size_of::<IdtEntry>() - 1) as u16;
-    IDTR.base = IDT.as_ptr() as u64;
+    IDTR.base = IDT.as_ptr() as *const X86IdtEntry;
 
     // Set up exceptions
     IDT[0].set_func(exception::divide_by_zero);

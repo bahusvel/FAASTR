@@ -120,9 +120,8 @@ impl SchemeList {
         self.insert(ns, Box::new(*b""), |scheme_id| {
             Arc::new(Box::new(RootScheme::new(ns, scheme_id)))
         }).unwrap();
-        self.insert(ns, Box::new(*b"event"), |_| {
-            Arc::new(Box::new(EventScheme::new()))
-        }).unwrap();
+        self.insert(ns, Box::new(*b"event"), |_| Arc::new(Box::new(EventScheme)))
+            .unwrap();
         self.insert(
             ns,
             Box::new(*b"env"),

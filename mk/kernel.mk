@@ -1,4 +1,4 @@
-FEATURES=multi_core
+FEATURES=multi_core graphical_debug acpi
 
 build/libkernel.a: mk/kernel.mk kernel/Cargo.toml kernel/src/* kernel/src/*/* kernel/src/*/*/* kernel/src/*/*/*/*
 	cd kernel && xargo rustc --lib --features "$(FEATURES)" --target $(KTARGET) --release -- -C soft-float -C debuginfo=2 --emit link=../$@

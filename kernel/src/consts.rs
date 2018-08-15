@@ -3,8 +3,6 @@
 // Each PML4 entry references up to 512 GB of memory
 // The top (511) PML4 is reserved for recursive mapping
 // The second from the top (510) PML4 is reserved for the kernel
-// The Formula XXX_PML4 = (XXX & PML4_MASK) / PML4_SIZE; simply calculates which PML4 entry has a specific offset
-
 /// The size of a single PML4
 pub const PML4_SIZE: usize = 0x0000_0080_0000_0000;
 pub const PML4_MASK: usize = 0x0000_ff80_0000_0000;

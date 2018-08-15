@@ -1,8 +1,8 @@
-use core::sync::atomic::Ordering;
-use spin::Once;
+use core::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use context;
 use device::serial::COM1;
+use event;
 use scheme::*;
 use sync::WaitQueue;
 use syscall::flag::{EVENT_READ, F_GETFL, F_SETFL, O_ACCMODE, O_NONBLOCK};
@@ -18,31 +18,43 @@ fn init_input() -> WaitQueue<u8> {
     WaitQueue::new()
 }
 
-/// Add to the input queue
-pub fn debug_input(b: u8) {
-    let len = INPUT.call_once(init_input).send(b);
-    context::event::trigger(DEBUG_SCHEME_ID.load(Ordering::SeqCst), 0, EVENT_READ, len);
+static NEXT_ID: AtomicUsize = ATOMIC_USIZE_INIT;
+
+static HANDLES: Once<RwLock<BTreeMap<usize, usize>>> = Once::new();
+
+fn init_handles() -> RwLock<BTreeMap<usize, usize>> {
+    RwLock::new(BTreeMap::new())
 }
 
-pub struct DebugScheme {
-    next_id: AtomicUsize,
-    handles: RwLock<BTreeMap<usize, usize>>,
+fn handles() -> RwLockReadGuard<'static, BTreeMap<usize, usize>> {
+    HANDLES.call_once(init_handles).read()
 }
+
+fn handles_mut() -> RwLockWriteGuard<'static, BTreeMap<usize, usize>> {
+    HANDLES.call_once(init_handles).write()
+}
+
+/// Add to the input queue
+pub fn debug_input(b: u8) {
+    INPUT.call_once(init_input).send(b);
+    for (id, _flags) in handles().iter() {
+        event::trigger(DEBUG_SCHEME_ID.load(Ordering::SeqCst), *id, EVENT_READ);
+    }
+}
+
+pub struct DebugScheme;
 
 impl DebugScheme {
     pub fn new(scheme_id: SchemeId) -> DebugScheme {
         DEBUG_SCHEME_ID.store(scheme_id, Ordering::SeqCst);
-        DebugScheme {
-            next_id: AtomicUsize::new(0),
-            handles: RwLock::new(BTreeMap::new()),
-        }
+        DebugScheme
     }
 }
 
 impl Scheme for DebugScheme {
     fn open(&self, _path: &[u8], flags: usize, _uid: u32, _gid: u32) -> Result<usize> {
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        self.handles.write().insert(id, flags & !O_ACCMODE);
+        let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
+        handles_mut().insert(id, flags & !O_ACCMODE);
 
         Ok(id)
     }
@@ -53,12 +65,12 @@ impl Scheme for DebugScheme {
         }
 
         let flags = {
-            let handles = self.handles.read();
+            let handles = handles();
             *handles.get(&id).ok_or(Error::new(EBADF))?
         };
 
-        let new_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        self.handles.write().insert(new_id, flags);
+        let new_id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
+        handles_mut().insert(new_id, flags);
 
         Ok(new_id)
     }
@@ -68,7 +80,7 @@ impl Scheme for DebugScheme {
     /// Returns the number of bytes read
     fn read(&self, id: usize, buf: &mut [u8]) -> Result<usize> {
         let flags = {
-            let handles = self.handles.read();
+            let handles = handles();
             *handles.get(&id).ok_or(Error::new(EBADF))?
         };
 
@@ -83,7 +95,7 @@ impl Scheme for DebugScheme {
     /// Returns the number of bytes written
     fn write(&self, id: usize, buffer: &[u8]) -> Result<usize> {
         let _flags = {
-            let handles = self.handles.read();
+            let handles = handles();
             *handles.get(&id).ok_or(Error::new(EBADF))?
         };
 
@@ -96,7 +108,7 @@ impl Scheme for DebugScheme {
     }
 
     fn fcntl(&self, id: usize, cmd: usize, arg: usize) -> Result<usize> {
-        let mut handles = self.handles.write();
+        let mut handles = handles_mut();
         if let Some(flags) = handles.get_mut(&id) {
             match cmd {
                 F_GETFL => Ok(*flags),
@@ -113,16 +125,16 @@ impl Scheme for DebugScheme {
 
     fn fevent(&self, id: usize, _flags: usize) -> Result<usize> {
         let _flags = {
-            let handles = self.handles.read();
+            let handles = handles();
             *handles.get(&id).ok_or(Error::new(EBADF))?
         };
 
-        Ok(0)
+        Ok(id)
     }
 
     fn fpath(&self, id: usize, buf: &mut [u8]) -> Result<usize> {
         let _flags = {
-            let handles = self.handles.read();
+            let handles = handles();
             *handles.get(&id).ok_or(Error::new(EBADF))?
         };
 
@@ -138,7 +150,7 @@ impl Scheme for DebugScheme {
 
     fn fsync(&self, id: usize) -> Result<usize> {
         let _flags = {
-            let handles = self.handles.read();
+            let handles = handles();
             *handles.get(&id).ok_or(Error::new(EBADF))?
         };
 
@@ -148,7 +160,7 @@ impl Scheme for DebugScheme {
     /// Close the file `number`
     fn close(&self, id: usize) -> Result<usize> {
         let _flags = {
-            let mut handles = self.handles.write();
+            let mut handles = handles_mut();
             handles.remove(&id).ok_or(Error::new(EBADF))?
         };
 

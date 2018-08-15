@@ -5,11 +5,12 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use core::{mem, slice, usize};
 use spin::{Mutex, RwLock};
 
+use context::{self, Context};
+use context::memory::Grant;
+use event;
 use paging::{InactivePageTable, Page, VirtualAddress};
 use paging::entry::EntryFlags;
 use paging::temporary_page::TemporaryPage;
-use context::{self, Context};
-use context::memory::Grant;
 use scheme::{AtomicSchemeId, ATOMIC_SCHEMEID_INIT, SchemeId};
 use sync::{WaitQueue, WaitMap};
 use syscall::data::{Packet, Stat, StatVfs, TimeSpec};
@@ -76,13 +77,8 @@ impl UserInner {
     fn call_inner(&self, packet: Packet) -> Result<usize> {
         let id = packet.id;
 
-        let len = self.todo.send(packet);
-        context::event::trigger(
-            self.root_id,
-            self.handle_id,
-            EVENT_READ,
-            mem::size_of::<Packet>() * len,
-        );
+        self.todo.send(packet);
+        event::trigger(self.root_id, self.handle_id, EVENT_READ);
 
         Error::demux(self.done.receive(&id))
     }
@@ -218,12 +214,7 @@ impl UserInner {
             if packet.id == 0 {
                 match packet.a {
                     SYS_FEVENT => {
-                        context::event::trigger(
-                            self.scheme_id.load(Ordering::SeqCst),
-                            packet.b,
-                            packet.c,
-                            packet.d,
-                        )
+                        event::trigger(self.scheme_id.load(Ordering::SeqCst), packet.b, packet.c)
                     }
                     _ => println!("Unknown scheme -> kernel message {}", packet.a),
                 }

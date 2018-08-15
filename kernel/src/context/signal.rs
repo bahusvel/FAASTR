@@ -57,7 +57,7 @@ pub extern "C" fn signal_handler(sig: usize) {
                 }
             }
             SIGSTOP | SIGTSTP | SIGTTIN | SIGTTOU => {
-                println!("Stop {}", sig);
+                // println!("Stop {}", sig);
 
                 {
                     let contexts = contexts();

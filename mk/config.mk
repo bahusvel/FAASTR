@@ -26,7 +26,7 @@ endif
 ROOT=$(PWD)
 export RUST_TARGET_PATH=$(ROOT)/kernel/targets
 export XARGO_HOME=$(ROOT)/build/xargo
-export XARGO_RUST_SRC=$(ROOT)/rust/src
+#export XARGO_RUST_SRC=$(ROOT)/rust/src
 
 # Kernel variables
 KTARGET=$(ARCH)-unknown-none

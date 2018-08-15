@@ -1,7 +1,8 @@
-//! Context management
-use alloc::allocator::{Alloc, Layout};
+//! # Context management
+//!
+//! For resources on contexts, please consult [wikipedia](https://en.wikipedia.org/wiki/Context_switch) and  [osdev](https://wiki.osdev.org/Context_Switching)
 use alloc::boxed::Box;
-use alloc::heap::Heap;
+use core::alloc::{Alloc, GlobalAlloc, Layout};
 use core::sync::atomic::Ordering;
 use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -20,9 +21,6 @@ mod list;
 
 /// Context switch function
 mod switch;
-
-/// Event handling
-pub mod event;
 
 /// File struct - defines a scheme and a file number
 pub mod file;
@@ -55,8 +53,9 @@ pub fn init() {
     );
     let mut context = context_lock.write();
     let mut fx = unsafe {
-        Box::from_raw(Heap.alloc(Layout::from_size_align_unchecked(512, 16))
-            .unwrap() as *mut [u8; 512])
+        Box::from_raw(::ALLOCATOR.alloc(
+            Layout::from_size_align_unchecked(512, 16),
+        ) as *mut [u8; 512])
     };
     for b in fx.iter_mut() {
         *b = 0;
@@ -77,6 +76,8 @@ fn init_contexts() -> RwLock<ContextList> {
 
 /// Get the global schemes list, const
 pub fn contexts() -> RwLockReadGuard<'static, ContextList> {
+    //call once will init_contexts only once during the kernel's exececution, otherwise it will return the current context via a
+    //cache.
     CONTEXTS.call_once(init_contexts).read()
 }
 
@@ -85,7 +86,6 @@ pub fn contexts_mut() -> RwLockWriteGuard<'static, ContextList> {
     CONTEXTS.call_once(init_contexts).write()
 }
 
-// The context this processor is currently in.
 pub fn context_id() -> ContextId {
     CONTEXT_ID.load(Ordering::SeqCst)
 }

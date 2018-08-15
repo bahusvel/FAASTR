@@ -72,6 +72,12 @@ pub unsafe extern "C" fn kstart(args_ptr: *const KernelArgs) -> ! {
         println!("Stack: {:X}:{:X}", stack_base, stack_base + stack_size);
         println!("Env: {:X}:{:X}", env_base, env_base + env_size);
 
+        // Set up GDT before paging
+        gdt::init();
+
+        // Set up IDT before paging
+        idt::init();
+
         // Initialize memory management
         memory::init(0, kernel_base + ((kernel_size + 4095) / 4096) * 4096);
 
@@ -84,11 +90,11 @@ pub unsafe extern "C" fn kstart(args_ptr: *const KernelArgs) -> ! {
             stack_base + stack_size,
         );
 
-        // Set up GDT
-        gdt::init(tcb_offset, stack_base + stack_size);
+        // Set up GDT after paging with TLS
+        gdt::init_paging(tcb_offset, stack_base + stack_size);
 
         // Set up IDT
-        idt::init();
+        idt::init_paging();
 
         // Test tdata and tbss
         {
@@ -154,14 +160,20 @@ pub unsafe extern "C" fn kstart_ap(args_ptr: *const KernelArgsAp) -> ! {
         assert_eq!(BSS_TEST_ZERO, 0);
         assert_eq!(DATA_TEST_NONZERO, 0xFFFF_FFFF_FFFF_FFFF);
 
+        // Set up GDT before paging
+        gdt::init();
+
+        // Set up IDT before paging
+        idt::init();
+
         // Initialize paging
         let tcb_offset = paging::init_ap(cpu_id, bsp_table, stack_start, stack_end);
 
-        // Set up GDT for AP
-        gdt::init(tcb_offset, stack_end);
+        // Set up GDT with TLS
+        gdt::init_paging(tcb_offset, stack_end);
 
         // Set up IDT for AP
-        idt::init();
+        idt::init_paging();
 
         // Test tdata and tbss
         {

@@ -267,9 +267,7 @@ pub fn cpu_info<W: Write>(w: &mut W) -> Result {
         if info.has_rtm() {
             write!(w, " rtm")?
         };
-        if info.has_qm() {
-            write!(w, " qm")?
-        };
+        //if info.has_qm() { write!(w, " qm")? };
         if info.has_fpu_cs_ds_deprecated() {
             write!(w, " fpu_seg")?
         };
