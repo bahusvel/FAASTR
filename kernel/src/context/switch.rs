@@ -15,7 +15,7 @@ unsafe fn update(context: &mut Context, cpu_id: usize) {
     }
 
     // Restore from signal, must only be done from another context to avoid overwriting the stack!
-    if context.ksig_restore && !context.running {
+    if context.ksig_restore && context.status != Status::Running {
         let ksig = context.ksig.take().expect(
             "context::switch: ksig not set with ksig_restore",
         );
@@ -61,7 +61,7 @@ unsafe fn update(context: &mut Context, cpu_id: usize) {
 
 unsafe fn runnable(context: &Context, cpu_id: usize) -> bool {
     // Switch to context if it needs to run, is not currently running, and is owned by the current CPU
-    !context.running && context.status == Status::Runnable && context.cpu_id == Some(cpu_id)
+    context.status == Status::Runnable && context.cpu_id == Some(cpu_id)
 }
 
 /// Switch to the next context
@@ -131,8 +131,11 @@ pub unsafe fn switch() -> bool {
 
     // Switch process states, TSS stack pointer, and store new context ID
     if to_ptr as usize != 0 {
-        (&mut *from_ptr).running = false;
-        (&mut *to_ptr).running = true;
+        // NOTE is this correct assumption?
+        if (&mut *from_ptr).status == Status::Running {
+            (&mut *from_ptr).status = Status::Runnable;
+        }
+        (&mut *to_ptr).status = Status::Running;
         if let Some(ref stack) = (*to_ptr).kstack {
             gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
         }

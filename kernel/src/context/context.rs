@@ -6,7 +6,7 @@ use core::mem;
 use spin::Mutex;
 
 use context::arch;
-use context::memory::{Grant, Memory, SharedMemory, Tls};
+use context::memory::{Grant, Memory, SharedMemory};
 use device;
 use syscall::data::SigAction;
 use syscall::flag::SIG_DFL;
@@ -20,6 +20,7 @@ int_like!(ContextId, AtomicContextId, usize, AtomicUsize);
 /// See `syscall::process::waitpid` and the `sync` module for examples of usage
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Status {
+    Running,
     Runnable,
     Blocked,
     Stopped(usize),
@@ -94,8 +95,6 @@ pub struct Context {
     pub ppid: ContextId,
     /// Status of context
     pub status: Status,
-    /// Context running or not
-    pub running: bool,
     /// CPU ID, if locked
     pub cpu_id: Option<usize>,
     /// Context is halting parent
@@ -124,8 +123,6 @@ pub struct Context {
     pub stack: Option<Memory>,
     /// User signal stack
     pub sigstack: Option<Memory>,
-    /// User Thread local storage
-    pub tls: Option<Tls>,
     /// User grants
     pub grants: Arc<Mutex<Vec<Grant>>>,
     /// The name of the context
@@ -142,7 +139,6 @@ impl Context {
             id: id,
             ppid: ContextId::from(0),
             status: Status::Blocked,
-            running: false,
             cpu_id: None,
             vfork: false,
             waitpid: Arc::new(WaitMap::new()),
@@ -157,7 +153,6 @@ impl Context {
             heap: None,
             stack: None,
             sigstack: None,
-            tls: None,
             grants: Arc::new(Mutex::new(Vec::new())),
             name: Arc::new(Mutex::new(Vec::new().into_boxed_slice())),
             env: Arc::new(Mutex::new(BTreeMap::new())),

@@ -12,7 +12,7 @@ use paging::temporary_page::TemporaryPage;
 use start::usermode;
 use interrupt;
 use context;
-use context::{ContextId, WaitpidKey};
+use context::{ContextId, WaitpidKey, Status};
 #[cfg(not(feature = "doc"))]
 use elf::{self, program_header};
 
@@ -69,7 +69,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
         let mut heap_option = None;
         let mut stack_option = None;
         let mut sigstack_option = None;
-        let mut tls_option = None;
         let grants;
         let name;
         let env;
@@ -206,38 +205,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
 
                 new_sigstack.remap(sigstack.flags());
                 sigstack_option = Some(new_sigstack);
-            }
-
-            if let Some(ref tls) = context.tls {
-                let mut new_tls = context::memory::Tls {
-                    master: tls.master,
-                    file_size: tls.file_size,
-                    mem: context::memory::Memory::new(
-                        VirtualAddress::new(::USER_TMP_TLS_OFFSET),
-                        tls.mem.size(),
-                        EntryFlags::PRESENT | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE,
-                        true,
-                    ),
-                    offset: tls.offset,
-                };
-
-
-                if flags & CLONE_VM == CLONE_VM {
-                    unsafe {
-                        new_tls.load();
-                    }
-                } else {
-                    unsafe {
-                        intrinsics::copy(
-                            tls.mem.start_address().get() as *const u8,
-                            new_tls.mem.start_address().get() as *mut u8,
-                            tls.mem.size(),
-                        );
-                    }
-                }
-
-                new_tls.mem.remap(tls.mem.flags());
-                tls_option = Some(new_tls);
             }
 
             if flags & CLONE_VM == CLONE_VM {
@@ -466,16 +433,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                 context.sigstack = Some(sigstack);
             }
 
-            // Setup user TLS
-            if let Some(mut tls) = tls_option {
-                tls.mem.move_to(
-                    VirtualAddress::new(::USER_TLS_OFFSET),
-                    &mut new_table,
-                    &mut temporary_page,
-                );
-                context.tls = Some(tls);
-            }
-
             context.name = name;
 
             context.env = env;
@@ -496,14 +453,12 @@ fn empty(context: &mut context::Context, reaping: bool) {
         assert!(context.heap.is_none());
         assert!(context.stack.is_none());
         assert!(context.sigstack.is_none());
-        assert!(context.tls.is_none());
     } else {
         // Unmap previous image, heap, grants, stack, and tls
         context.image.clear();
         drop(context.heap.take());
         drop(context.stack.take());
         drop(context.sigstack.take());
-        drop(context.tls.take());
     }
 
     // FIXME: Looks like a race condition.
@@ -551,8 +506,6 @@ fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) 
 
             empty(&mut context, false);
 
-            // Map and copy new segments
-            let mut tls_option = None;
             {
                 let elf = elf::Elf::from(&data).unwrap();
                 entry = elf.entry();
@@ -593,35 +546,6 @@ fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) 
                         memory.remap(flags);
 
                         context.image.push(memory.to_shared());
-                    } else if segment.p_type == program_header::PT_TLS {
-                        let memory = context::memory::Memory::new(
-                            VirtualAddress::new(::USER_TCB_OFFSET),
-                            4096,
-                            EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE |
-                                EntryFlags::USER_ACCESSIBLE,
-                            true,
-                        );
-                        let aligned_size = if segment.p_align > 0 {
-                            ((segment.p_memsz + (segment.p_align - 1)) / segment.p_align) *
-                                segment.p_align
-                        } else {
-                            segment.p_memsz
-                        };
-                        let rounded_size = ((aligned_size + 4095) / 4096) * 4096;
-                        let rounded_offset = rounded_size - aligned_size;
-                        let tcb_offset = ::USER_TLS_OFFSET + rounded_size as usize;
-                        unsafe {
-                            *(::USER_TCB_OFFSET as *mut usize) = tcb_offset;
-                        }
-
-                        context.image.push(memory.to_shared());
-
-                        tls_option = Some((
-                            VirtualAddress::new(segment.p_vaddr as usize),
-                            segment.p_filesz as usize,
-                            rounded_size as usize,
-                            rounded_offset as usize,
-                        ));
                     }
                 }
             }
@@ -657,28 +581,6 @@ fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) 
                     EntryFlags::USER_ACCESSIBLE,
                 true,
             ));
-
-            // Map TLS
-            if let Some((master, file_size, size, offset)) = tls_option {
-                let mut tls = context::memory::Tls {
-                    master: master,
-                    file_size: file_size,
-                    mem: context::memory::Memory::new(
-                        VirtualAddress::new(::USER_TLS_OFFSET),
-                        size,
-                        EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE |
-                            EntryFlags::USER_ACCESSIBLE,
-                        true,
-                    ),
-                    offset: offset,
-                };
-
-                unsafe {
-                    tls.load();
-                }
-
-                context.tls = Some(tls);
-            }
 
             // Push arguments
             let mut arg_size = 0;
@@ -1042,13 +944,13 @@ pub fn sigreturn() -> Result<usize> {
 
 fn reap(pid: ContextId) -> Result<ContextId> {
     // Spin until not running
-    let mut running = true;
-    while running {
+    let mut status = Status::Running;
+    while status == Status::Running {
         {
             let contexts = context::contexts();
             let context_lock = contexts.get(pid).ok_or(Error::new(ESRCH))?;
             let context = context_lock.read();
-            running = context.running;
+            status = context.status;
         }
 
         interrupt::pause();

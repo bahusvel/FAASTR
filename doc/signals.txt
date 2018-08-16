@@ -1,0 +1,9 @@
+Signals in Linux serve multiple purposes, they deliver exceptions, provide asynchronous preemptible way to invoke interrupts in userspace, can be used as IPC (for signalling and other trash), pausing, profiling and even debugging.
+
+The async way to invoke userspace code is valid, but it will not be done through signals in my case. Instead a function will be invoked directly in the user module, by the means of cast.
+
+Exceptions, especially fatal ones, like SIGSEGV, SIGILL, SIGFPE are not actually something user could do much about dynamically. These instead of being delivered as signals should terminate the function immediately, and potentially notify the module by means of async call. User will not be able to fix the function execution.
+
+So in fact they are not really even signals, they are just events for the system to invoke user functions when specific issues occur. They are represented as handlers and caller is the system. To these functions the system can provide useful information, like memory ranges that caused the fault and so on. Via system specific API.
+
+Things like pausing, and profiling will be done through drivers, and priviledged functions may utilise those drivers to perform these operations, and not use signals for this purpose.
