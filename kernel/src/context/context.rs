@@ -90,26 +90,14 @@ impl Eq for WaitpidKey {}
 pub struct Context {
     /// The ID of this context
     pub id: ContextId,
-    /// The group ID of this context
-    pub pgid: ContextId,
     /// The ID of the parent context
     pub ppid: ContextId,
-    /// The real user id
-    pub ruid: u32,
-    /// The real group id
-    pub rgid: u32,
-    /// The effective user id
-    pub euid: u32,
-    /// The effective group id
-    pub egid: u32,
     /// Status of context
     pub status: Status,
     /// Context running or not
     pub running: bool,
     /// CPU ID, if locked
     pub cpu_id: Option<usize>,
-    /// Current system call
-    pub syscall: Option<(usize, usize, usize, usize, usize, usize)>,
     /// Context is halting parent
     pub vfork: bool,
     /// Context is being waited on
@@ -142,8 +130,6 @@ pub struct Context {
     pub grants: Arc<Mutex<Vec<Grant>>>,
     /// The name of the context
     pub name: Arc<Mutex<Box<[u8]>>>,
-    /// The current working directory
-    pub cwd: Arc<Mutex<Vec<u8>>>,
     /// The process environment
     pub env: Arc<Mutex<BTreeMap<Box<[u8]>, Arc<Mutex<Vec<u8>>>>>>,
     /// Singal actions
@@ -154,16 +140,10 @@ impl Context {
     pub fn new(id: ContextId) -> Context {
         Context {
             id: id,
-            pgid: id,
             ppid: ContextId::from(0),
-            ruid: 0,
-            rgid: 0,
-            euid: 0,
-            egid: 0,
             status: Status::Blocked,
             running: false,
             cpu_id: None,
-            syscall: None,
             vfork: false,
             waitpid: Arc::new(WaitMap::new()),
             pending: VecDeque::new(),
@@ -180,7 +160,6 @@ impl Context {
             tls: None,
             grants: Arc::new(Mutex::new(Vec::new())),
             name: Arc::new(Mutex::new(Vec::new().into_boxed_slice())),
-            cwd: Arc::new(Mutex::new(Vec::new())),
             env: Arc::new(Mutex::new(BTreeMap::new())),
             actions: Arc::new(Mutex::new(vec![
                 (
@@ -193,72 +172,6 @@ impl Context {
             );
                 128
             ])),
-        }
-    }
-
-    /// Make a relative path absolute
-    /// Given a cwd of "scheme:/path"
-    /// This function will turn "foo" into "scheme:/path/foo"
-    /// "/foo" will turn into "scheme:/foo"
-    /// "bar:/foo" will be used directly, as it is already absolute
-    pub fn canonicalize(&self, path: &[u8]) -> Vec<u8> {
-        let mut canon = if path.iter().position(|&b| b == b':').is_none() {
-            let cwd = self.cwd.lock();
-
-            let mut canon = if !path.starts_with(b"/") {
-                let mut c = cwd.clone();
-                if !c.ends_with(b"/") {
-                    c.push(b'/');
-                }
-                c
-            } else {
-                cwd[..cwd.iter().position(|&b| b == b':').map_or(1, |i| i + 1)].to_vec()
-            };
-
-            canon.extend_from_slice(&path);
-            canon
-        } else {
-            path.to_vec()
-        };
-
-        // NOTE: assumes the scheme does not include anything like "../" or "./"
-        let mut result = {
-            let parts = canon
-                .split(|&c| c == b'/')
-                .filter(|&part| part != b".")
-                .rev()
-                .scan(0, |nskip, part| if part == b"." {
-                    Some(None)
-                } else if part == b".." {
-                    *nskip += 1;
-                    Some(None)
-                } else if *nskip > 0 {
-                    *nskip -= 1;
-                    Some(None)
-                } else {
-                    Some(Some(part))
-                })
-                .filter_map(|x| x)
-                .filter(|x| !x.is_empty())
-                .collect::<Vec<_>>();
-            parts.iter().rev().fold(Vec::new(), |mut vec, &part| {
-                vec.extend_from_slice(part);
-                vec.push(b'/');
-                vec
-            })
-        };
-        result.pop(); // remove extra '/'
-
-        // replace with the root of the scheme if it's empty
-        if result.is_empty() {
-            let pos = canon.iter().position(|&b| b == b':').map_or(
-                canon.len(),
-                |p| p + 1,
-            );
-            canon.truncate(pos);
-            canon
-        } else {
-            result
         }
     }
 

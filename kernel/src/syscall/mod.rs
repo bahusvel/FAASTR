@@ -190,23 +190,8 @@ pub fn syscall(
     //
     // When the code below falls out of scope it will release the lock
     // see the spin crate for details
-    {
-        let contexts = ::context::contexts();
-        if let Some(context_lock) = contexts.current() {
-            let mut context = context_lock.write();
-            context.syscall = Some((a, b, c, d, e, f));
-        }
-    }
 
     let result = inner(a, b, c, d, e, f, bp, stack);
-
-    {
-        let contexts = ::context::contexts();
-        if let Some(context_lock) = contexts.current() {
-            let mut context = context_lock.write();
-            context.syscall = None;
-        }
-    }
 
     /*
     if debug {

@@ -3,7 +3,6 @@ use alloc::boxed::Box;
 use alloc::{BTreeMap, Vec};
 use core::alloc::{GlobalAlloc, Layout};
 use core::{intrinsics, mem, str};
-use core::ops::DerefMut;
 use spin::Mutex;
 
 use memory::allocate_frames;
@@ -17,11 +16,10 @@ use context::{ContextId, WaitpidKey};
 #[cfg(not(feature = "doc"))]
 use elf::{self, program_header};
 
-use syscall;
-use syscall::data::{SigAction, Stat};
+use syscall::data::SigAction;
 use syscall::error::*;
-use syscall::flag::{CLONE_VFORK, CLONE_VM, CLONE_FS, CLONE_FILES, CLONE_SIGHAND, SIG_DFL, SIGCONT,
-                    SIGTERM, WCONTINUED, WNOHANG, WUNTRACED, wifcontinued, wifstopped};
+use syscall::flag::{CLONE_VFORK, CLONE_VM, CLONE_SIGHAND, SIG_DFL, SIGCONT, SIGTERM, WCONTINUED,
+                    WNOHANG, WUNTRACED, wifcontinued, wifstopped};
 use syscall::validate::{validate_slice, validate_slice_mut};
 
 pub fn brk(address: usize) -> Result<usize> {
@@ -61,11 +59,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
     let ppid;
     let pid;
     {
-        let pgid;
-        let ruid;
-        let rgid;
-        let euid;
-        let egid;
         let mut cpu_id = None;
         let arch;
         let vfork;
@@ -79,7 +72,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
         let mut tls_option = None;
         let grants;
         let name;
-        let cwd;
         let env;
         let actions;
 
@@ -90,11 +82,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
             let context = context_lock.read();
 
             ppid = context.id;
-            pgid = context.pgid;
-            ruid = context.ruid;
-            rgid = context.rgid;
-            euid = context.euid;
-            egid = context.egid;
 
             if flags & CLONE_VM == CLONE_VM {
                 cpu_id = context.cpu_id;
@@ -265,12 +252,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                 name = Arc::new(Mutex::new(context.name.lock().clone()));
             }
 
-            if flags & CLONE_FS == CLONE_FS {
-                cwd = Arc::clone(&context.cwd);
-            } else {
-                cwd = Arc::new(Mutex::new(context.cwd.lock().clone()));
-            }
-
             if flags & CLONE_VM == CLONE_VM {
                 env = Arc::clone(&context.env);
             } else {
@@ -307,12 +288,7 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
 
             pid = context.id;
 
-            context.pgid = pgid;
             context.ppid = ppid;
-            context.ruid = ruid;
-            context.rgid = rgid;
-            context.euid = euid;
-            context.egid = egid;
 
             context.cpu_id = cpu_id;
 
@@ -501,8 +477,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
             }
 
             context.name = name;
-
-            context.cwd = cwd;
 
             context.env = env;
 
@@ -866,23 +840,12 @@ pub fn exit(status: usize) -> ! {
         };
 
         // PGID and PPID must be grabbed after close, as context switches could change PGID or PPID if parent exits
-        let (pid, pgid, ppid) = {
+        let (pid, ppid) = {
             let context = context_lock.read();
-            (context.id, context.pgid, context.ppid)
+            (context.id, context.ppid)
         };
 
-        // Transfer child processes to parent
-        {
-            let contexts = context::contexts();
-            for (_id, context_lock) in contexts.iter() {
-                let mut context = context_lock.write();
-                if context.ppid == pid {
-                    context.ppid = ppid;
-                    context.vfork = false;
-                }
-            }
-        }
-
+        // Deallocate and Notify children of parent death.
         let (vfork, children) = {
             let mut context = context_lock.write();
 
@@ -898,6 +861,7 @@ pub fn exit(status: usize) -> ! {
             (vfork, children)
         };
 
+        // Unblock parent and notify waiters
         {
             let contexts = context::contexts();
             if let Some(parent_lock) = contexts.get(ppid) {
@@ -922,7 +886,7 @@ pub fn exit(status: usize) -> ! {
                 waitpid.send(
                     WaitpidKey {
                         pid: Some(pid),
-                        pgid: Some(pgid),
+                        pgid: Some(ppid),
                     },
                     (pid, status),
                 );
@@ -935,6 +899,7 @@ pub fn exit(status: usize) -> ! {
             }
         }
 
+        // Stop CPU if kernel exits.
         if pid == ContextId::from(1) {
             println!("Main kernel thread exited with status {:X}", status);
 
@@ -971,37 +936,25 @@ pub fn getpid() -> Result<ContextId> {
 }
 
 pub fn kill(pid: ContextId, sig: usize) -> Result<usize> {
-    let (ruid, euid, current_pgid) = {
-        let contexts = context::contexts();
-        let context_lock = contexts.current().ok_or(Error::new(ESRCH))?;
-        let context = context_lock.read();
-        (context.ruid, context.euid, context.pgid)
-    };
-
     if sig < 0x7F {
         let mut found = 0;
         let mut sent = 0;
 
         {
             let contexts = context::contexts();
-
             let send = |context: &mut context::Context| -> bool {
-                if euid == 0 || euid == context.ruid || ruid == context.ruid {
-                    // If sig = 0, test that process exists and can be
-                    // signalled, but don't send any signal.
-                    if sig != 0 {
-                        context.pending.push_back(sig as u8);
-                        // Convert stopped processes to blocked if sending SIGCONT
-                        if sig == SIGCONT {
-                            if let context::Status::Stopped(_sig) = context.status {
-                                context.status = context::Status::Blocked;
-                            }
+                // If sig = 0, test that process exists and can be
+                // signalled, but don't send any signal.
+                if sig != 0 {
+                    context.pending.push_back(sig as u8);
+                    // Convert stopped processes to blocked if sending SIGCONT
+                    if sig == SIGCONT {
+                        if let context::Status::Stopped(_sig) = context.status {
+                            context.status = context::Status::Blocked;
                         }
                     }
-                    true
-                } else {
-                    false
                 }
+                true
             };
 
             if pid.into() as isize > 0 {
@@ -1020,25 +973,6 @@ pub fn kill(pid: ContextId, sig: usize) -> Result<usize> {
                     let mut context = context_lock.write();
 
                     if context.id.into() > 2 {
-                        found += 1;
-
-                        if send(&mut context) {
-                            sent += 1;
-                        }
-                    }
-                }
-            } else {
-                let pgid = if pid.into() == 0 {
-                    current_pgid
-                } else {
-                    ContextId::from(-(pid.into() as isize) as usize)
-                };
-
-                // Send to every process in the process group whose ID
-                for (_id, context_lock) in contexts.iter() {
-                    let mut context = context_lock.write();
-
-                    if context.pgid == pgid {
                         found += 1;
 
                         if send(&mut context) {
@@ -1195,45 +1129,6 @@ pub fn waitpid(pid: ContextId, status_ptr: usize, flags: usize) -> Result<Contex
                 }
             } else {
                 let (_wid, (w_pid, status)) = waitpid.receive_any();
-                grim_reaper(w_pid, status)
-            }
-        } else if (pid.into() as isize) < 0 {
-            let pgid = ContextId::from(-(pid.into() as isize) as usize);
-
-            // Check for existence of child in process group PGID
-            {
-                let mut found = false;
-
-                let contexts = context::contexts();
-                for (_id, context_lock) in contexts.iter() {
-                    let context = context_lock.read();
-                    if context.pgid == pgid {
-                        found = true;
-                        break;
-                    }
-                }
-
-                if !found {
-                    return Err(Error::new(ECHILD));
-                }
-            }
-
-            if flags & WNOHANG == WNOHANG {
-                if let Some((w_pid, status)) =
-                    waitpid.receive_nonblock(&WaitpidKey {
-                        pid: None,
-                        pgid: Some(pgid),
-                    })
-                {
-                    grim_reaper(w_pid, status)
-                } else {
-                    Some(Ok(ContextId::from(0)))
-                }
-            } else {
-                let (w_pid, status) = waitpid.receive(&WaitpidKey {
-                    pid: None,
-                    pgid: Some(pgid),
-                });
                 grim_reaper(w_pid, status)
             }
         } else {

@@ -1,0 +1,39 @@
+Information associated with the context:
+* Id
+* Name/Function ID
+* Args
+* TemplatePtr
+* Type - Pure | Procedural
+* Status
+* FusionLink: Option<Context> - Caller by fusion.
+* Arch context
+* kfx, kstack - those should move to arch context in my opinion
+* Heap
+* Stack
+* Grants - I will probably keep them.
+* Env - Context local storage for drivers.
+* ReadAndWriteLists - Do they even go here? Probably.
+
+Contexts are formed/cloned from templates, templates contain:
+* Name
+* List of functions
+* Executable Image
+* Env
+* SignalTable
+
+There will be a special template will effectively mean kernelspace.
+
+Change from Redox:
+* Parent ID will not be used, it should be represented as link chain.
+* Status will include whether the context is running or not, dont need dedicated running field.
+* CPU ID is ultimately not neccessary, because CPUs will own context by placing them on their run queue.
+* vfork represents whether it is halting parent, which is always yes, and represented by link chain, so dont need vfork flag.
+* WaitPid, that may be useful for system functions waiting on async calls.
+
+* pending: I need to think about how signal delivery will work.
+
+* wake, there will be no wake there will be timers. Which will spawn functions, blocking wait is non scheduled.
+* ksig, ksig_restore - those seem stupid and pointless I will not keep them.
+* sigstack, I dont think there will be sigstack, it will just spawn new function instance.
+* tls, there is no userspace tls
+* actions - not really this part is probably only relevant to template.

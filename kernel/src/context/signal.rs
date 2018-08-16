@@ -29,13 +29,13 @@ pub extern "C" fn signal_handler(sig: usize) {
                 {
                     let contexts = contexts();
 
-                    let (pid, pgid, ppid) = {
+                    let (pid, ppid) = {
                         let context_lock = contexts.current().expect(
                             "context::signal_handler not inside of context",
                         );
                         let mut context = context_lock.write();
                         context.status = Status::Runnable;
-                        (context.id, context.pgid, context.ppid)
+                        (context.id, context.ppid)
                     };
 
                     if let Some(parent_lock) = contexts.get(ppid) {
@@ -47,7 +47,7 @@ pub extern "C" fn signal_handler(sig: usize) {
                         waitpid.send(
                             WaitpidKey {
                                 pid: Some(pid),
-                                pgid: Some(pgid),
+                                pgid: Some(ppid),
                             },
                             (pid, 0xFFFF),
                         );
@@ -62,13 +62,13 @@ pub extern "C" fn signal_handler(sig: usize) {
                 {
                     let contexts = contexts();
 
-                    let (pid, pgid, ppid) = {
+                    let (pid, ppid) = {
                         let context_lock = contexts.current().expect(
                             "context::signal_handler not inside of context",
                         );
                         let mut context = context_lock.write();
                         context.status = Status::Stopped(sig);
-                        (context.id, context.pgid, context.ppid)
+                        (context.id, context.ppid)
                     };
 
                     if let Some(parent_lock) = contexts.get(ppid) {
@@ -80,7 +80,7 @@ pub extern "C" fn signal_handler(sig: usize) {
                         waitpid.send(
                             WaitpidKey {
                                 pid: Some(pid),
-                                pgid: Some(pgid),
+                                pgid: Some(ppid),
                             },
                             (pid, (sig << 8) | 0x7F),
                         );

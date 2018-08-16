@@ -120,7 +120,6 @@ pub fn format_call(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize) -
         SYS_PHYSMAP => format!("physmap({:#X}, {}, {:#X})", b, c, d),
         SYS_PHYSUNMAP => format!("physunmap({:#X})", b),
         SYS_VIRTTOPHYS => format!("virttophys({:#X})", b),
-        SYS_PIPE2 => format!("pipe2({:?}, {})", validate_slice_mut(b as *mut usize, 2), c),
         SYS_WAITPID => format!("waitpid({}, {:#X}, {})", b, c, d),
         SYS_YIELD => format!("yield()"),
         _ => {
