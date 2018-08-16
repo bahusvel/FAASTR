@@ -865,15 +865,10 @@ pub fn exit(status: usize) -> ! {
             Arc::clone(&context_lock)
         };
 
-        let pid = {
-            let mut context = context_lock.read();
-            context.id
-        };
-
         // PGID and PPID must be grabbed after close, as context switches could change PGID or PPID if parent exits
-        let (pgid, ppid) = {
+        let (pid, pgid, ppid) = {
             let context = context_lock.read();
-            (context.pgid, context.ppid)
+            (context.id, context.pgid, context.ppid)
         };
 
         // Transfer child processes to parent
@@ -957,11 +952,11 @@ pub fn exit(status: usize) -> ! {
                     kstop();
                 }
             }
+        } else {
+            //reap(pid).expect("Failed to reap context");
         }
         println!("PID {:?} exited", pid);
     }
-
-
 
     let _ = unsafe { context::switch() };
 

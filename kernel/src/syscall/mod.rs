@@ -62,7 +62,7 @@ pub fn syscall(
         stack: &mut SyscallStack,
     ) -> Result<usize> {
         //SYS_* is declared in kernel/syscall/src/number.rs
-        match a & SYS_CLASS {
+        match a {
             SYS_YIELD => sched_yield(),
             SYS_NANOSLEEP => {
                 nanosleep(
@@ -100,8 +100,14 @@ pub fn syscall(
             SYS_WRITE => {
                 let slice = validate_slice(b as *const u8, c)?;
                 let string = from_utf8(slice).map_err(|_| Error::new(EINVAL))?;
-                println!("{:?}", string);
-                Ok(0)
+                let contexts = ::context::contexts();
+                if let Some(context_lock) = contexts.current() {
+                    let context = context_lock.read();
+                    let name_slice = context.name.lock();
+                    let name = from_utf8(&name_slice).expect("name is not readable");
+                    println!("{}: {}", name, string);
+                }
+                Ok(10)
             }
             SYS_BRK => brk(b),
             SYS_GETPID => getpid().map(ContextId::into),
@@ -178,13 +184,6 @@ pub fn syscall(
 
 
     */
-    {
-        let contexts = ::context::contexts();
-        if let Some(context_lock) = contexts.current() {
-            let context = context_lock.read();
-            println!("Context {:?} in syscall {:?}", context.name, a);
-        }
-    }
 
     // The next lines set the current syscall in the context struct, then once the inner() function
     // completes, we set the current syscall to none.

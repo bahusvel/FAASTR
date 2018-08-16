@@ -1,3 +1,6 @@
+clean_initfs:
+	rm -rf build/initfs || true
+
 build/initfs: test/exit
 	mkdir -p $@ || true
 	cp $< $@

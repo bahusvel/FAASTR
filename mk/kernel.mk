@@ -9,7 +9,7 @@ build/libkernel.a: mk/kernel.mk kernel/Cargo.toml kernel/src/* kernel/src/*/* ke
 # 	cd kernel && INITFS_FOLDER=$(ROOT)/build/initfs xargo rustc --lib --target $(KTARGET) --release -- -C soft-float -C debuginfo=2 --emit link=../$@
 # endif
 
-build/libkernel_live.a: mk/kernel.mk kernel/Cargo.toml kernel/src/* kernel/src/*/* kernel/src/*/*/* kernel/src/*/*/*/* build/initfs
+build/libkernel_live.a: mk/kernel.mk kernel/Cargo.toml kernel/src/* kernel/src/*/* kernel/src/*/*/* kernel/src/*/*/*/* clean_initfs build/initfs
 	cd kernel && INITFS_FOLDER=$(ROOT)/build/initfs xargo rustc --lib --features "$(FEATURES)" --target $(KTARGET) --release -- -C soft-float -C debuginfo=2 --emit link=../$@
 
 build/kernel: kernel/linkers/$(ARCH).ld build/libkernel.a

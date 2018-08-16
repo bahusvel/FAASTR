@@ -6,7 +6,7 @@ void sys_exit() {
 
 long sys_write(void *buf, long len) {
   long r;
-  asm("mov $0x21000004, %%rax;"
+  asm("mov $0x2, %%rax;"
       "int $0x80"
       : "=a"(r)
       : "b"(buf), "c"(len));
@@ -14,7 +14,8 @@ long sys_write(void *buf, long len) {
 }
 
 void _start() {
-  const char *hello = "hello\n";
-  // sys_write((void *)hello, 6);
+  const char *hello = "hello";
+  sys_write((void *)hello, 5);
+  sys_write((void *)hello, 5);
   sys_exit();
 }

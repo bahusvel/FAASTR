@@ -1,2 +1,4 @@
-test/exit: test/exit.c
-	gcc -nostdlib $< -o $@
+FORCE:
+
+test/exit: FORCE
+	gcc -nostdlib $@.c -o $@
