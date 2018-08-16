@@ -38,6 +38,8 @@ pub mod time;
 /// Validate input
 pub mod validate;
 
+pub mod load;
+
 /// This function is the syscall handler of the kernel, it is composed of an inner function that returns a `Result<usize>`. After the inner function runs, the syscall
 /// function calls [`Error::mux`] on it.
 pub fn syscall(
@@ -103,8 +105,7 @@ pub fn syscall(
                 let contexts = ::context::contexts();
                 if let Some(context_lock) = contexts.current() {
                     let context = context_lock.read();
-                    let name_slice = context.name.lock();
-                    let name = from_utf8(&name_slice).expect("name is not readable");
+                    let name = from_utf8(&context.name).expect("name is not readable");
                     println!("{}: {}", name, string);
                 }
                 Ok(10)

@@ -124,11 +124,11 @@ pub struct Context {
     /// User signal stack
     pub sigstack: Option<Memory>,
     /// User grants
-    pub grants: Arc<Mutex<Vec<Grant>>>,
+    pub grants: Vec<Grant>,
     /// The name of the context
-    pub name: Arc<Mutex<Box<[u8]>>>,
+    pub name: Box<[u8]>,
     /// The process environment
-    pub env: Arc<Mutex<BTreeMap<Box<[u8]>, Arc<Mutex<Vec<u8>>>>>>,
+    pub env: BTreeMap<Box<[u8]>, Arc<Mutex<Vec<u8>>>>,
     /// Singal actions
     pub actions: Arc<Mutex<Vec<(SigAction, usize)>>>,
 }
@@ -153,9 +153,9 @@ impl Context {
             heap: None,
             stack: None,
             sigstack: None,
-            grants: Arc::new(Mutex::new(Vec::new())),
-            name: Arc::new(Mutex::new(Vec::new().into_boxed_slice())),
-            env: Arc::new(Mutex::new(BTreeMap::new())),
+            grants: Vec::new(),
+            name: Vec::new().into_boxed_slice(),
+            env: BTreeMap::new(),
             actions: Arc::new(Mutex::new(vec![
                 (
                 SigAction {

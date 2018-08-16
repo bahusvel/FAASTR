@@ -31,9 +31,6 @@ pub mod signal;
 /// Limit on number of contexts
 pub const CONTEXT_MAX_CONTEXTS: usize = (isize::max_value() as usize) - 1;
 
-/// Maximum context files
-pub const CONTEXT_MAX_FILES: usize = 65_536;
-
 /// Contexts list
 static CONTEXTS: Once<RwLock<ContextList>> = Once::new();
 

@@ -52,9 +52,9 @@ pub fn physmap(physical_address: usize, size: usize, flags: usize) -> Result<usi
     } else {
         let contexts = context::contexts();
         let context_lock = contexts.current().ok_or(Error::new(ESRCH))?;
-        let context = context_lock.read();
+        let mut context = context_lock.write();
 
-        let mut grants = context.grants.lock();
+        let grants = &mut context.grants;
 
         let from_address = (physical_address / 4096) * 4096;
         let offset = physical_address - from_address;
@@ -110,9 +110,9 @@ pub fn physunmap(virtual_address: usize) -> Result<usize> {
     } else {
         let contexts = context::contexts();
         let context_lock = contexts.current().ok_or(Error::new(ESRCH))?;
-        let context = context_lock.read();
+        let mut context = context_lock.write();
 
-        let mut grants = context.grants.lock();
+        let grants = &mut context.grants;
 
         for i in 0..grants.len() {
             let start = grants[i].start_address().get();

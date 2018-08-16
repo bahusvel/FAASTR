@@ -235,7 +235,7 @@ pub extern "C" fn ksignal(signal: usize) {
         if let Some(context_lock) = contexts.current() {
             let context = context_lock.read();
             println!("NAME {}", unsafe {
-                ::core::str::from_utf8_unchecked(&context.name.lock())
+                ::core::str::from_utf8_unchecked(&context.name)
             });
         }
     }

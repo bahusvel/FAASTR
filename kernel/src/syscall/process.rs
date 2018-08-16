@@ -207,27 +207,20 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                 sigstack_option = Some(new_sigstack);
             }
 
-            if flags & CLONE_VM == CLONE_VM {
-                grants = Arc::clone(&context.grants);
-            } else {
-                grants = Arc::new(Mutex::new(Vec::new()));
-            }
 
-            if flags & CLONE_VM == CLONE_VM {
-                name = Arc::clone(&context.name);
-            } else {
-                name = Arc::new(Mutex::new(context.name.lock().clone()));
-            }
+            grants = Vec::new();
 
-            if flags & CLONE_VM == CLONE_VM {
-                env = Arc::clone(&context.env);
-            } else {
-                let mut new_env = BTreeMap::new();
-                for item in context.env.lock().iter() {
-                    new_env.insert(item.0.clone(), Arc::new(Mutex::new(item.1.lock().clone())));
-                }
-                env = Arc::new(Mutex::new(new_env));
+
+            // Copy the name
+            name = context.name.clone();
+
+            //Copy the environment
+            let mut new_env = BTreeMap::new();
+            for item in context.env.iter() {
+                new_env.insert(item.0.clone(), Arc::new(Mutex::new(item.1.lock().clone())));
             }
+            env = new_env;
+
             if flags & CLONE_SIGHAND == CLONE_SIGHAND {
                 actions = Arc::clone(&context.actions);
             } else {
@@ -339,16 +332,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                     context.heap = Some(heap_shared);
                 }
 
-                // Copy grant mapping
-                if !grants.lock().is_empty() {
-                    let frame = active_table.p4()[::USER_GRANT_PML4]
-                        .pointed_frame()
-                        .expect("user grants not mapped");
-                    let flags = active_table.p4()[::USER_GRANT_PML4].flags();
-                    active_table.with(&mut new_table, &mut temporary_page, |mapper| {
-                        mapper.p4_mut()[::USER_GRANT_PML4].set(frame, flags);
-                    });
-                }
                 context.grants = grants;
             } else {
                 // Copy percpu mapping
@@ -461,30 +444,26 @@ fn empty(context: &mut context::Context, reaping: bool) {
         drop(context.sigstack.take());
     }
 
-    // FIXME: Looks like a race condition.
-    // Is it possible for Arc::strong_count to return 1 to two contexts that exit at the
-    // same time, or return 2 to both, thus either double freeing or leaking the grants?
-    if Arc::strong_count(&context.grants) == 1 {
-        let mut grants = context.grants.lock();
-        for grant in grants.drain(..) {
-            if reaping {
-                println!(
-                    "{}: {}: Grant should not exist: {:?}",
-                    context.id.into(),
-                    unsafe { ::core::str::from_utf8_unchecked(&context.name.lock()) },
-                    grant
-                );
 
-                let mut new_table =
-                    unsafe { InactivePageTable::from_address(context.arch.get_page_table()) };
-                let mut temporary_page = TemporaryPage::new(Page::containing_address(
-                    VirtualAddress::new(::USER_TMP_GRANT_OFFSET),
-                ));
+    let grants = &mut context.grants;
+    for grant in grants.drain(..) {
+        if reaping {
+            println!(
+                "{}: {}: Grant should not exist: {:?}",
+                context.id.into(),
+                unsafe { ::core::str::from_utf8_unchecked(&context.name) },
+                grant
+            );
 
-                grant.unmap_inactive(&mut new_table, &mut temporary_page);
-            } else {
-                grant.unmap();
-            }
+            let mut new_table =
+                unsafe { InactivePageTable::from_address(context.arch.get_page_table()) };
+            let mut temporary_page = TemporaryPage::new(Page::containing_address(
+                VirtualAddress::new(::USER_TMP_GRANT_OFFSET),
+            ));
+
+            grant.unmap_inactive(&mut new_table, &mut temporary_page);
+        } else {
+            grant.unmap();
         }
     }
 }
@@ -502,7 +481,7 @@ fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) 
             let mut context = context_lock.write();
 
             // Set name
-            context.name = Arc::new(Mutex::new(canonical));
+            context.name = canonical;
 
             empty(&mut context, false);
 
