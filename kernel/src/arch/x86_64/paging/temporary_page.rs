@@ -3,9 +3,9 @@
 
 use memory::Frame;
 
-use super::{ActivePageTable, Page, VirtualAddress};
 use super::entry::EntryFlags;
-use super::table::{Table, Level1};
+use super::table::{Level1, Table};
+use super::{ActivePageTable, Page, VirtualAddress};
 
 pub struct TemporaryPage {
     page: Page,

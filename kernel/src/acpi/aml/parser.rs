@@ -1,7 +1,7 @@
-use alloc::string::String;
-use alloc::btree_map::BTreeMap;
-use alloc::vec::Vec;
 use alloc::boxed::Box;
+use alloc::btree_map::BTreeMap;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use spin::RwLockWriteGuard;
 
@@ -80,12 +80,10 @@ impl AmlExecutionContext {
 
         let mutex_idx = match event_ptr {
             AmlValue::String(ref s) => s.clone(),
-            AmlValue::ObjectReference(ref o) => {
-                match *o {
-                    ObjectReference::Object(ref s) => s.clone(),
-                    _ => return Err(AmlError::AmlValueError),
-                }
-            }
+            AmlValue::ObjectReference(ref o) => match *o {
+                ObjectReference::Object(ref s) => s.clone(),
+                _ => return Err(AmlError::AmlValueError),
+            },
             _ => return Err(AmlError::AmlValueError),
         };
 
@@ -114,15 +112,12 @@ impl AmlExecutionContext {
             None => return Err(AmlError::AmlHardFatal),
         };
 
-
         let mutex_idx = match event_ptr {
             AmlValue::String(ref s) => s.clone(),
-            AmlValue::ObjectReference(ref o) => {
-                match *o {
-                    ObjectReference::Object(ref s) => s.clone(),
-                    _ => return Err(AmlError::AmlValueError),
-                }
-            }
+            AmlValue::ObjectReference(ref o) => match *o {
+                ObjectReference::Object(ref s) => s.clone(),
+                _ => return Err(AmlError::AmlValueError),
+            },
             _ => return Err(AmlError::AmlValueError),
         };
 
@@ -152,12 +147,10 @@ impl AmlExecutionContext {
 
         let mutex_idx = match mutex_ptr {
             AmlValue::String(ref s) => s.clone(),
-            AmlValue::ObjectReference(ref o) => {
-                match *o {
-                    ObjectReference::Object(ref s) => s.clone(),
-                    _ => return Err(AmlError::AmlValueError),
-                }
-            }
+            AmlValue::ObjectReference(ref o) => match *o {
+                ObjectReference::Object(ref s) => s.clone(),
+                _ => return Err(AmlError::AmlValueError),
+            },
             _ => return Err(AmlError::AmlValueError),
         };
 
@@ -210,12 +203,10 @@ impl AmlExecutionContext {
         };
         let mutex_idx = match mutex_ptr {
             AmlValue::String(ref s) => s.clone(),
-            AmlValue::ObjectReference(ref o) => {
-                match *o {
-                    ObjectReference::Object(ref s) => s.clone(),
-                    _ => return Err(AmlError::AmlValueError),
-                }
-            }
+            AmlValue::ObjectReference(ref o) => match *o {
+                ObjectReference::Object(ref s) => s.clone(),
+                _ => return Err(AmlError::AmlValueError),
+            },
             _ => return Err(AmlError::AmlValueError),
         };
 
@@ -426,40 +417,36 @@ impl AmlExecutionContext {
         indices: Vec<u64>,
     ) -> Result<(), AmlError> {
         match name {
-            AmlValue::ObjectReference(r) => {
-                match r {
-                    ObjectReference::Object(s) => self.modify_index_final(s, value, indices),
-                    ObjectReference::Index(c, v) => {
-                        let mut indices = indices.clone();
-                        indices.push(v.get_as_integer()?);
+            AmlValue::ObjectReference(r) => match r {
+                ObjectReference::Object(s) => self.modify_index_final(s, value, indices),
+                ObjectReference::Index(c, v) => {
+                    let mut indices = indices.clone();
+                    indices.push(v.get_as_integer()?);
 
-                        self.modify_index(*c, value, indices)
-                    }
-                    ObjectReference::ArgObj(_) => Err(AmlError::AmlValueError),
-                    ObjectReference::LocalObj(i) => {
-                        let v = self.local_vars[i as usize].clone();
-                        self.local_vars[i as usize] = self.modify_index_core(v, value, indices)?;
-
-                        Ok(())
-                    }
+                    self.modify_index(*c, value, indices)
                 }
-            }
+                ObjectReference::ArgObj(_) => Err(AmlError::AmlValueError),
+                ObjectReference::LocalObj(i) => {
+                    let v = self.local_vars[i as usize].clone();
+                    self.local_vars[i as usize] = self.modify_index_core(v, value, indices)?;
+
+                    Ok(())
+                }
+            },
             _ => Err(AmlError::AmlValueError),
         }
     }
 
     pub fn modify(&mut self, name: AmlValue, value: AmlValue) -> Result<(), AmlError> {
         match name {
-            AmlValue::ObjectReference(r) => {
-                match r {
-                    ObjectReference::ArgObj(_) => Err(AmlError::AmlValueError),
-                    ObjectReference::LocalObj(i) => self.modify_local_obj(i as usize, value),
-                    ObjectReference::Object(s) => self.modify_object(s, value),
-                    ObjectReference::Index(c, v) => {
-                        self.modify_index(*c, value, vec![v.get_as_integer()?])
-                    }
+            AmlValue::ObjectReference(r) => match r {
+                ObjectReference::ArgObj(_) => Err(AmlError::AmlValueError),
+                ObjectReference::LocalObj(i) => self.modify_local_obj(i as usize, value),
+                ObjectReference::Object(s) => self.modify_object(s, value),
+                ObjectReference::Index(c, v) => {
+                    self.modify_index(*c, value, vec![v.get_as_integer()?])
                 }
-            }
+            },
             AmlValue::String(s) => self.modify_object(s, value),
             _ => Err(AmlError::AmlValueError),
         }
@@ -481,16 +468,14 @@ impl AmlExecutionContext {
 
     pub fn copy(&mut self, name: AmlValue, value: AmlValue) -> Result<(), AmlError> {
         match name {
-            AmlValue::ObjectReference(r) => {
-                match r {
-                    ObjectReference::ArgObj(_) => Err(AmlError::AmlValueError),
-                    ObjectReference::LocalObj(i) => self.copy_local_obj(i as usize, value),
-                    ObjectReference::Object(s) => self.copy_object(s, value),
-                    ObjectReference::Index(c, v) => {
-                        self.modify_index(*c, value, vec![v.get_as_integer()?])
-                    }
+            AmlValue::ObjectReference(r) => match r {
+                ObjectReference::ArgObj(_) => Err(AmlError::AmlValueError),
+                ObjectReference::LocalObj(i) => self.copy_local_obj(i as usize, value),
+                ObjectReference::Object(s) => self.copy_object(s, value),
+                ObjectReference::Index(c, v) => {
+                    self.modify_index(*c, value, vec![v.get_as_integer()?])
                 }
-            }
+            },
             AmlValue::String(s) => self.copy_object(s, value),
             _ => Err(AmlError::AmlValueError),
         }
@@ -556,46 +541,42 @@ impl AmlExecutionContext {
 
     pub fn get_index(&self, name: AmlValue, indices: Vec<u64>) -> Result<AmlValue, AmlError> {
         match name {
-            AmlValue::ObjectReference(r) => {
-                match r {
-                    ObjectReference::Object(s) => self.get_index_final(s, indices),
-                    ObjectReference::Index(c, v) => {
-                        let mut indices = indices.clone();
-                        indices.push(v.get_as_integer()?);
+            AmlValue::ObjectReference(r) => match r {
+                ObjectReference::Object(s) => self.get_index_final(s, indices),
+                ObjectReference::Index(c, v) => {
+                    let mut indices = indices.clone();
+                    indices.push(v.get_as_integer()?);
 
-                        self.get_index(*c, indices)
-                    }
-                    ObjectReference::ArgObj(_) => Err(AmlError::AmlValueError),
-                    ObjectReference::LocalObj(i) => {
-                        let v = self.local_vars[i as usize].clone();
-                        self.get_index_core(v, indices)
-                    }
+                    self.get_index(*c, indices)
                 }
-            }
+                ObjectReference::ArgObj(_) => Err(AmlError::AmlValueError),
+                ObjectReference::LocalObj(i) => {
+                    let v = self.local_vars[i as usize].clone();
+                    self.get_index_core(v, indices)
+                }
+            },
             _ => Err(AmlError::AmlValueError),
         }
     }
 
     pub fn get(&self, name: AmlValue) -> Result<AmlValue, AmlError> {
         Ok(match name {
-            AmlValue::ObjectReference(r) => {
-                match r {
-                    ObjectReference::ArgObj(i) => self.arg_vars[i as usize].clone(),
-                    ObjectReference::LocalObj(i) => self.local_vars[i as usize].clone(),
-                    ObjectReference::Object(ref s) => {
-                        if let Some(ref namespace) = *ACPI_TABLE.namespace.read() {
-                            if let Some(o) = namespace.get(s) {
-                                o.clone()
-                            } else {
-                                AmlValue::None
-                            }
+            AmlValue::ObjectReference(r) => match r {
+                ObjectReference::ArgObj(i) => self.arg_vars[i as usize].clone(),
+                ObjectReference::LocalObj(i) => self.local_vars[i as usize].clone(),
+                ObjectReference::Object(ref s) => {
+                    if let Some(ref namespace) = *ACPI_TABLE.namespace.read() {
+                        if let Some(o) = namespace.get(s) {
+                            o.clone()
                         } else {
                             AmlValue::None
                         }
+                    } else {
+                        AmlValue::None
                     }
-                    ObjectReference::Index(c, v) => self.get_index(*c, vec![v.get_as_integer()?])?,
                 }
-            }
+                ObjectReference::Index(c, v) => self.get_index(*c, vec![v.get_as_integer()?])?,
+            },
             AmlValue::String(ref s) => {
                 if let Some(ref namespace) = *ACPI_TABLE.namespace.read() {
                     if let Some(o) = namespace.get(s) {

@@ -6,7 +6,7 @@ use core::ops::{Index, IndexMut};
 
 use memory::allocate_frames;
 
-use super::entry::{EntryFlags, Entry};
+use super::entry::{Entry, EntryFlags};
 use super::ENTRY_COUNT;
 
 pub const P4: *mut Table<Level4> = 0xffff_ffff_ffff_f000 as *mut _;
@@ -92,15 +92,13 @@ where
     L: HierarchicalLevel,
 {
     pub fn next_table(&self, index: usize) -> Option<&Table<L::NextLevel>> {
-        self.next_table_address(index).map(|address| unsafe {
-            &*(address as *const _)
-        })
+        self.next_table_address(index)
+            .map(|address| unsafe { &*(address as *const _) })
     }
 
     pub fn next_table_mut(&mut self, index: usize) -> Option<&mut Table<L::NextLevel>> {
-        self.next_table_address(index).map(|address| unsafe {
-            &mut *(address as *mut _)
-        })
+        self.next_table_address(index)
+            .map(|address| unsafe { &mut *(address as *mut _) })
     }
 
     pub fn next_table_create(&mut self, index: usize) -> &mut Table<L::NextLevel> {
@@ -119,8 +117,7 @@ where
 
     fn next_table_address(&self, index: usize) -> Option<usize> {
         let entry_flags = self[index].flags();
-        if entry_flags.contains(EntryFlags::PRESENT) &&
-            !entry_flags.contains(EntryFlags::HUGE_PAGE)
+        if entry_flags.contains(EntryFlags::PRESENT) && !entry_flags.contains(EntryFlags::HUGE_PAGE)
         {
             let table_address = self as *const _ as usize;
             Some((table_address << 9) | (index << 12))

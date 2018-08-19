@@ -1,7 +1,7 @@
 use core::{mem, slice};
 
-use paging::{ActivePageTable, Page, VirtualAddress};
 use paging::entry::EntryFlags;
+use paging::{ActivePageTable, Page, VirtualAddress};
 use syscall::error::*;
 
 fn validate(address: usize, size: usize, flags: EntryFlags) -> Result<()> {

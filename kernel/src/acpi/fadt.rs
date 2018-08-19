@@ -1,7 +1,7 @@
 use core::{mem, ptr};
 
 use super::sdt::Sdt;
-use super::{ACPI_TABLE, SDT_POINTERS, get_sdt, find_sdt, get_sdt_signature, load_table};
+use super::{find_sdt, get_sdt, get_sdt_signature, load_table, ACPI_TABLE, SDT_POINTERS};
 
 use paging::ActivePageTable;
 
@@ -108,9 +108,7 @@ impl Fadt {
         };
 
         if let Some(fadt) = fadt {
-            println!("  FACP: {:X}", {
-                fadt.dsdt
-            });
+            println!("  FACP: {:X}", { fadt.dsdt });
 
             let dsdt_sdt = get_sdt(fadt.dsdt as usize, active_table);
 

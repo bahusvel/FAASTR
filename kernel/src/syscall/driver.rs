@@ -1,10 +1,10 @@
-use interrupt::syscall::SyscallStack;
-use memory::{allocate_frames, deallocate_frames, Frame};
-use paging::{ActivePageTable, PhysicalAddress, VirtualAddress};
-use paging::entry::EntryFlags;
 use context;
 use context::memory::Grant;
-use syscall::error::{Error, EFAULT, EINVAL, ENOMEM, EPERM, ESRCH, Result};
+use interrupt::syscall::SyscallStack;
+use memory::{allocate_frames, deallocate_frames, Frame};
+use paging::entry::EntryFlags;
+use paging::{ActivePageTable, PhysicalAddress, VirtualAddress};
+use syscall::error::{Error, Result, EFAULT, EINVAL, ENOMEM, EPERM, ESRCH};
 use syscall::flag::{MAP_WRITE, MAP_WRITE_COMBINE};
 
 fn enforce_root() -> Result<()> {
@@ -61,8 +61,8 @@ pub fn physmap(physical_address: usize, size: usize, flags: usize) -> Result<usi
         let full_size = ((offset + size + 4095) / 4096) * 4096;
         let mut to_address = ::USER_GRANT_OFFSET;
 
-        let mut entry_flags = EntryFlags::PRESENT | EntryFlags::NO_EXECUTE |
-            EntryFlags::USER_ACCESSIBLE;
+        let mut entry_flags =
+            EntryFlags::PRESENT | EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE;
         if flags & MAP_WRITE == MAP_WRITE {
             entry_flags |= EntryFlags::WRITABLE;
         }

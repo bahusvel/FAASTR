@@ -1,14 +1,14 @@
 use alloc::vec::Vec;
 
-use super::AmlError;
-use super::parser::{AmlParseType, ParseResult, AmlExecutionContext, ExecutionState};
-use super::namespace::{AmlValue, get_namespace_string};
-use super::namespacemodifier::parse_namespace_modifier;
+use super::dataobj::{parse_arg_obj, parse_data_obj, parse_local_obj};
 use super::namedobj::parse_named_obj;
-use super::dataobj::{parse_data_obj, parse_arg_obj, parse_local_obj};
+use super::namespace::{get_namespace_string, AmlValue};
+use super::namespacemodifier::parse_namespace_modifier;
+use super::namestring::parse_name_string;
+use super::parser::{AmlExecutionContext, AmlParseType, ExecutionState, ParseResult};
 use super::type1opcode::parse_type1_opcode;
 use super::type2opcode::parse_type2_opcode;
-use super::namestring::parse_name_string;
+use super::AmlError;
 
 pub fn parse_term_list(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
     match ctx.state {

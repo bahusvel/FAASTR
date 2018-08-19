@@ -3,10 +3,10 @@
 use core::mem;
 use x86::current::segmentation::set_cs;
 use x86::current::task::TaskStateSegment;
-use x86::shared::PrivilegeLevel;
 use x86::shared::dtables::{self, DescriptorTablePointer};
 use x86::shared::segmentation::{self, SegmentDescriptor, SegmentSelector};
 use x86::shared::task;
+use x86::shared::PrivilegeLevel;
 
 pub const GDT_NULL: usize = 0;
 pub const GDT_KERNEL_CODE: usize = 1;
@@ -48,8 +48,7 @@ static mut INIT_GDT: [GdtEntry; 4] = [
     GdtEntry::new(
         0,
         0,
-        GDT_A_PRESENT | GDT_A_RING_0 | GDT_A_SYSTEM |
-            GDT_A_EXECUTABLE | GDT_A_PRIVILEGE,
+        GDT_A_PRESENT | GDT_A_RING_0 | GDT_A_SYSTEM | GDT_A_EXECUTABLE | GDT_A_PRIVILEGE,
         GDT_F_LONG_MODE,
     ),
     // Kernel data
@@ -75,57 +74,56 @@ pub static mut GDTR: DescriptorTablePointer<SegmentDescriptor> = DescriptorTable
 };
 
 #[thread_local]
-pub static mut GDT: [GdtEntry; 9] =
-    [
-        // Null
-        GdtEntry::new(0, 0, 0, 0),
-        // Kernel code
-        GdtEntry::new(
-            0,
-            0,
-            GDT_A_PRESENT | GDT_A_RING_0 | GDT_A_SYSTEM | GDT_A_EXECUTABLE | GDT_A_PRIVILEGE,
-            GDT_F_LONG_MODE,
-        ),
-        // Kernel data
-        GdtEntry::new(
-            0,
-            0,
-            GDT_A_PRESENT | GDT_A_RING_0 | GDT_A_SYSTEM | GDT_A_PRIVILEGE,
-            GDT_F_LONG_MODE,
-        ),
-        // Kernel TLS
-        GdtEntry::new(
-            0,
-            0,
-            GDT_A_PRESENT | GDT_A_RING_0 | GDT_A_SYSTEM | GDT_A_PRIVILEGE,
-            GDT_F_LONG_MODE,
-        ),
-        // User code
-        GdtEntry::new(
-            0,
-            0,
-            GDT_A_PRESENT | GDT_A_RING_3 | GDT_A_SYSTEM | GDT_A_EXECUTABLE | GDT_A_PRIVILEGE,
-            GDT_F_LONG_MODE,
-        ),
-        // User data
-        GdtEntry::new(
-            0,
-            0,
-            GDT_A_PRESENT | GDT_A_RING_3 | GDT_A_SYSTEM | GDT_A_PRIVILEGE,
-            GDT_F_LONG_MODE,
-        ),
-        // User TLS
-        GdtEntry::new(
-            0,
-            0,
-            GDT_A_PRESENT | GDT_A_RING_3 | GDT_A_SYSTEM | GDT_A_PRIVILEGE,
-            GDT_F_LONG_MODE,
-        ),
-        // TSS
-        GdtEntry::new(0, 0, GDT_A_PRESENT | GDT_A_RING_3 | GDT_A_TSS_AVAIL, 0),
-        // TSS must be 16 bytes long, twice the normal size
-        GdtEntry::new(0, 0, 0, 0),
-    ];
+pub static mut GDT: [GdtEntry; 9] = [
+    // Null
+    GdtEntry::new(0, 0, 0, 0),
+    // Kernel code
+    GdtEntry::new(
+        0,
+        0,
+        GDT_A_PRESENT | GDT_A_RING_0 | GDT_A_SYSTEM | GDT_A_EXECUTABLE | GDT_A_PRIVILEGE,
+        GDT_F_LONG_MODE,
+    ),
+    // Kernel data
+    GdtEntry::new(
+        0,
+        0,
+        GDT_A_PRESENT | GDT_A_RING_0 | GDT_A_SYSTEM | GDT_A_PRIVILEGE,
+        GDT_F_LONG_MODE,
+    ),
+    // Kernel TLS
+    GdtEntry::new(
+        0,
+        0,
+        GDT_A_PRESENT | GDT_A_RING_0 | GDT_A_SYSTEM | GDT_A_PRIVILEGE,
+        GDT_F_LONG_MODE,
+    ),
+    // User code
+    GdtEntry::new(
+        0,
+        0,
+        GDT_A_PRESENT | GDT_A_RING_3 | GDT_A_SYSTEM | GDT_A_EXECUTABLE | GDT_A_PRIVILEGE,
+        GDT_F_LONG_MODE,
+    ),
+    // User data
+    GdtEntry::new(
+        0,
+        0,
+        GDT_A_PRESENT | GDT_A_RING_3 | GDT_A_SYSTEM | GDT_A_PRIVILEGE,
+        GDT_F_LONG_MODE,
+    ),
+    // User TLS
+    GdtEntry::new(
+        0,
+        0,
+        GDT_A_PRESENT | GDT_A_RING_3 | GDT_A_SYSTEM | GDT_A_PRIVILEGE,
+        GDT_F_LONG_MODE,
+    ),
+    // TSS
+    GdtEntry::new(0, 0, GDT_A_PRESENT | GDT_A_RING_3 | GDT_A_TSS_AVAIL, 0),
+    // TSS must be 16 bytes long, twice the normal size
+    GdtEntry::new(0, 0, 0, 0),
+];
 
 #[thread_local]
 pub static mut TSS: TaskStateSegment = TaskStateSegment {
@@ -140,7 +138,7 @@ pub static mut TSS: TaskStateSegment = TaskStateSegment {
 
 #[cfg(feature = "pti")]
 pub unsafe fn set_tss_stack(stack: usize) {
-    use arch::x86_64::pti::{PTI_CPU_STACK, PTI_CONTEXT_STACK};
+    use arch::x86_64::pti::{PTI_CONTEXT_STACK, PTI_CPU_STACK};
     TSS.rsp[0] = (PTI_CPU_STACK.as_ptr() as usize + PTI_CPU_STACK.len()) as u64;
     PTI_CONTEXT_STACK = stack;
 }

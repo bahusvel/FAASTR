@@ -31,39 +31,22 @@ pub struct ScratchRegisters {
 
 impl ScratchRegisters {
     pub fn dump(&self) {
-        println!("RAX:   {:>016X}", {
-            self.rax
-        });
-        println!("RCX:   {:>016X}", {
-            self.rcx
-        });
-        println!("RDX:   {:>016X}", {
-            self.rdx
-        });
-        println!("RDI:   {:>016X}", {
-            self.rdi
-        });
-        println!("RSI:   {:>016X}", {
-            self.rsi
-        });
-        println!("R8:    {:>016X}", {
-            self.r8
-        });
-        println!("R9:    {:>016X}", {
-            self.r9
-        });
-        println!("R10:   {:>016X}", {
-            self.r10
-        });
-        println!("R11:   {:>016X}", {
-            self.r11
-        });
+        println!("RAX:   {:>016X}", { self.rax });
+        println!("RCX:   {:>016X}", { self.rcx });
+        println!("RDX:   {:>016X}", { self.rdx });
+        println!("RDI:   {:>016X}", { self.rdi });
+        println!("RSI:   {:>016X}", { self.rsi });
+        println!("R8:    {:>016X}", { self.r8 });
+        println!("R9:    {:>016X}", { self.r9 });
+        println!("R10:   {:>016X}", { self.r10 });
+        println!("R11:   {:>016X}", { self.r11 });
     }
 }
 
 macro_rules! scratch_push {
-    () => (asm!(
-        "push rax
+    () => {
+        asm!(
+                "push rax
         push rcx
         push rdx
         push rdi
@@ -72,13 +55,15 @@ macro_rules! scratch_push {
         push r9
         push r10
         push r11"
-        : : : : "intel", "volatile"
-    ));
+                : : : : "intel", "volatile"
+            )
+    };
 }
 
 macro_rules! scratch_pop {
-    () => (asm!(
-        "pop r11
+    () => {
+        asm!(
+                "pop r11
         pop r10
         pop r9
         pop r8
@@ -87,8 +72,9 @@ macro_rules! scratch_pop {
         pop rdx
         pop rcx
         pop rax"
-        : : : : "intel", "volatile"
-    ));
+                : : : : "intel", "volatile"
+            )
+    };
 }
 
 #[allow(dead_code)]
@@ -104,65 +90,61 @@ pub struct PreservedRegisters {
 
 impl PreservedRegisters {
     pub fn dump(&self) {
-        println!("RBX:   {:>016X}", {
-            self.rbx
-        });
-        println!("RBP:   {:>016X}", {
-            self.rbp
-        });
-        println!("R12:   {:>016X}", {
-            self.r12
-        });
-        println!("R13:   {:>016X}", {
-            self.r13
-        });
-        println!("R14:   {:>016X}", {
-            self.r14
-        });
-        println!("R15:   {:>016X}", {
-            self.r15
-        });
+        println!("RBX:   {:>016X}", { self.rbx });
+        println!("RBP:   {:>016X}", { self.rbp });
+        println!("R12:   {:>016X}", { self.r12 });
+        println!("R13:   {:>016X}", { self.r13 });
+        println!("R14:   {:>016X}", { self.r14 });
+        println!("R15:   {:>016X}", { self.r15 });
     }
 }
 
 macro_rules! preserved_push {
-    () => (asm!(
-        "push rbx
+    () => {
+        asm!(
+                "push rbx
         push rbp
         push r12
         push r13
         push r14
         push r15"
-        : : : : "intel", "volatile"
-    ));
+                : : : : "intel", "volatile"
+            )
+    };
 }
 
 macro_rules! preserved_pop {
-    () => (asm!(
-        "pop r15
+    () => {
+        asm!(
+                "pop r15
         pop r14
         pop r13
         pop r12
         pop rbp
         pop rbx"
-        : : : : "intel", "volatile"
-    ));
+                : : : : "intel", "volatile"
+            )
+    };
 }
 
 macro_rules! fs_push {
-    () => (asm!(
-        "push fs
+    () => {
+        asm!(
+                "push fs
         mov rax, 0x18
         mov fs, ax"
-        : : : : "intel", "volatile"
-    ));
+                : : : : "intel", "volatile"
+            )
+    };
 }
 
 macro_rules! fs_pop {
-    () => (asm!(
-        "pop fs"
-        : : : : "intel", "volatile"
-    ));
+    () => {
+        asm!(
+                "pop fs"
+                : : : : "intel", "volatile"
+            )
+    };
 }
 
 #[allow(dead_code)]
@@ -175,23 +157,19 @@ pub struct IretRegisters {
 
 impl IretRegisters {
     pub fn dump(&self) {
-        println!("RFLAG: {:>016X}", {
-            self.rflags
-        });
-        println!("CS:    {:>016X}", {
-            self.cs
-        });
-        println!("RIP:   {:>016X}", {
-            self.rip
-        });
+        println!("RFLAG: {:>016X}", { self.rflags });
+        println!("CS:    {:>016X}", { self.cs });
+        println!("RIP:   {:>016X}", { self.rip });
     }
 }
 
 macro_rules! iret {
-    () => (asm!(
-        "iretq"
-        : : : : "intel", "volatile"
-    ));
+    () => {
+        asm!(
+                "iretq"
+                : : : : "intel", "volatile"
+            )
+    };
 }
 
 /// Create an interrupt function that can safely run rust code
@@ -199,7 +177,7 @@ macro_rules! iret {
 macro_rules! interrupt {
     ($name:ident, $func:block) => {
         #[naked]
-        pub unsafe extern fn $name () {
+        pub unsafe extern "C" fn $name() {
             #[inline(never)]
             unsafe fn inner() {
                 $func
@@ -238,9 +216,7 @@ impl InterruptStack {
     pub fn dump(&self) {
         self.iret.dump();
         self.scratch.dump();
-        println!("FS:    {:>016X}", {
-            self.fs
-        });
+        println!("FS:    {:>016X}", { self.fs });
     }
 }
 
@@ -291,13 +267,9 @@ pub struct InterruptErrorStack {
 impl InterruptErrorStack {
     pub fn dump(&self) {
         self.iret.dump();
-        println!("CODE:  {:>016X}", {
-            self.code
-        });
+        println!("CODE:  {:>016X}", { self.code });
         self.scratch.dump();
-        println!("FS:    {:>016X}", {
-            self.fs
-        });
+        println!("FS:    {:>016X}", { self.fs });
     }
 }
 
@@ -351,9 +323,7 @@ impl InterruptStackP {
         self.iret.dump();
         self.scratch.dump();
         self.preserved.dump();
-        println!("FS:    {:>016X}", {
-            self.fs
-        });
+        println!("FS:    {:>016X}", { self.fs });
     }
 }
 
@@ -407,14 +377,10 @@ pub struct InterruptErrorStackP {
 impl InterruptErrorStackP {
     pub fn dump(&self) {
         self.iret.dump();
-        println!("CODE:  {:>016X}", {
-            self.code
-        });
+        println!("CODE:  {:>016X}", { self.code });
         self.scratch.dump();
         self.preserved.dump();
-        println!("FS:    {:>016X}", {
-            self.fs
-        });
+        println!("FS:    {:>016X}", { self.fs });
     }
 }
 

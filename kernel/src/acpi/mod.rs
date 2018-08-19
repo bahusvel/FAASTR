@@ -1,10 +1,10 @@
 //! # ACPI
 //! Code to parse the ACPI tables
 
+use alloc::boxed::Box;
 use alloc::btree_map::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::boxed::Box;
 
 use syscall::io::{Io, Pio};
 
@@ -13,31 +13,31 @@ use spin::RwLock;
 use stop::kstop;
 
 use memory::Frame;
-use paging::{ActivePageTable, Page, PhysicalAddress, VirtualAddress};
 use paging::entry::EntryFlags;
+use paging::{ActivePageTable, Page, PhysicalAddress, VirtualAddress};
 
 use self::dmar::Dmar;
 use self::fadt::Fadt;
+use self::hpet::Hpet;
 use self::madt::Madt;
+use self::rsdp::RSDP;
 use self::rsdt::Rsdt;
+use self::rxsdt::Rxsdt;
 use self::sdt::Sdt;
 use self::xsdt::Xsdt;
-use self::hpet::Hpet;
-use self::rxsdt::Rxsdt;
-use self::rsdp::RSDP;
 
 use self::aml::{parse_aml_table, AmlError, AmlValue};
 
-pub mod hpet;
+mod aml;
 mod dmar;
 mod fadt;
+pub mod hpet;
 mod madt;
+mod rsdp;
 mod rsdt;
+mod rxsdt;
 mod sdt;
 mod xsdt;
-mod aml;
-mod rxsdt;
-mod rsdp;
 
 const TRAMPOLINE: usize = 0x7E00;
 const AP_STARTUP: usize = TRAMPOLINE + 512;

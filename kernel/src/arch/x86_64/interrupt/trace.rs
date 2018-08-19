@@ -15,10 +15,9 @@ pub unsafe fn stack_trace() {
     let active_table = ActivePageTable::new();
     for _frame in 0..64 {
         if let Some(rip_rbp) = rbp.checked_add(mem::size_of::<usize>()) {
-            if active_table.translate(VirtualAddress::new(rbp)).is_some() &&
-                active_table
-                    .translate(VirtualAddress::new(rip_rbp))
-                    .is_some()
+            if active_table.translate(VirtualAddress::new(rbp)).is_some() && active_table
+                .translate(VirtualAddress::new(rip_rbp))
+                .is_some()
             {
                 let rip = *(rip_rbp as *const usize);
                 if rip == 0 {
@@ -61,8 +60,9 @@ pub unsafe fn symbol_trace(addr: usize) {
 
         if let Some(symbols) = elf.symbols() {
             for sym in symbols {
-                if sym::st_type(sym.st_info) == sym::STT_FUNC && addr >= sym.st_value as usize &&
-                    addr < (sym.st_value + sym.st_size) as usize
+                if sym::st_type(sym.st_info) == sym::STT_FUNC
+                    && addr >= sym.st_value as usize
+                    && addr < (sym.st_value + sym.st_size) as usize
                 {
                     println!(
                         "    {:>016X}+{:>04X}",

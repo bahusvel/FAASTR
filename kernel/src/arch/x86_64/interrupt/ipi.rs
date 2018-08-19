@@ -1,8 +1,8 @@
 use core::sync::atomic::Ordering;
 
+use super::irq::PIT_TICKS;
 use context;
 use device::local_apic::LOCAL_APIC;
-use super::irq::PIT_TICKS;
 
 interrupt!(ipi, {
     LOCAL_APIC.eoi();

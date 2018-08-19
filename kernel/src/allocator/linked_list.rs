@@ -45,10 +45,9 @@ unsafe impl GlobalAlloc for Allocator {
                     }
                 }
                 other => {
-                    return other.ok().map_or(
-                        0 as *mut u8,
-                        |allocation| allocation.as_ptr(),
-                    )
+                    return other
+                        .ok()
+                        .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
                 }
             }
         }

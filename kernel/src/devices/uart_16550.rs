@@ -1,6 +1,6 @@
 use core::fmt::{self, Write};
 
-use syscall::io::{Io, Pio, Mmio, ReadOnly};
+use syscall::io::{Io, Mmio, Pio, ReadOnly};
 
 bitflags! {
     /// Interrupt enable flags

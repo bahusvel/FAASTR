@@ -1,9 +1,8 @@
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{Error, Write};
 use std::path::Path;
-use std::collections::HashMap;
-
 
 // View loc folder with subfolders, get listings
 // Returns touple (folder_map, file_list)
@@ -59,8 +58,7 @@ fn fill_from_location(f: &mut fs::File, loc: &Path) -> Result<(), (Error)> {
         write!(
             f,
             "        b\"{}\" => Some(include_bytes!(\"{}\")),\n",
-            strip,
-            name
+            strip, name
         )?;
     }
 

@@ -1,7 +1,7 @@
 //! # Memory management
 //! Some code was borrowed from [Phil Opp's Blog](http://os.phil-opp.com/allocating-frames.html)
 
-pub use paging::{PAGE_SIZE, PhysicalAddress};
+pub use paging::{PhysicalAddress, PAGE_SIZE};
 
 use self::bump::BumpAllocator;
 use self::recycle::RecycleAllocator;
@@ -149,12 +149,16 @@ impl Frame {
 
     //TODO: Set private
     pub fn clone(&self) -> Frame {
-        Frame { number: self.number }
+        Frame {
+            number: self.number,
+        }
     }
 
     /// Create a frame containing `address`
     pub fn containing_address(address: PhysicalAddress) -> Frame {
-        Frame { number: address.get() / PAGE_SIZE }
+        Frame {
+            number: address.get() / PAGE_SIZE,
+        }
     }
 
     //TODO: Set private

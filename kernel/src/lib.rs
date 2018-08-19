@@ -4,7 +4,6 @@
 //! provides Unix-like syscalls for primarily Rust applications
 // FIXME this is wrong, and is not a solution, I need to implement Debug properly on affected structs
 #![allow(safe_packed_borrows)]
-
 //#![deny(warnings)]
 #![cfg_attr(feature = "clippy", allow(if_same_then_else))]
 #![cfg_attr(feature = "clippy", allow(inline_always))]
@@ -43,11 +42,11 @@ extern crate alloc;
 extern crate bitflags;
 extern crate goblin;
 extern crate linked_list_allocator;
-extern crate spin;
 #[cfg(feature = "slab")]
 extern crate slab_allocator;
+extern crate spin;
 
-use core::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 
 pub use consts::*;
 
@@ -127,11 +126,9 @@ pub fn cpu_count() -> usize {
 
 include!(concat!(env!("OUT_DIR"), "/gen.rs"));
 
-
 /// Initialize userspace by running the initfs:bin/init process
 /// This function will also set the CWD to initfs:bin and open debug: as stdio
 pub extern "C" fn userspace_init() {
-
     syscall::exec(
         b"exit",
         initfs_get_file(b"/exit").expect("Could not find exit in initfs"),

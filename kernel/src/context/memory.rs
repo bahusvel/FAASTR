@@ -4,10 +4,10 @@ use core::intrinsics;
 use spin::Mutex;
 
 use memory::Frame;
-use paging::{ActivePageTable, InactivePageTable, Page, PageIter, PhysicalAddress, VirtualAddress};
 use paging::entry::EntryFlags;
 use paging::mapper::MapperFlushAll;
 use paging::temporary_page::TemporaryPage;
+use paging::{ActivePageTable, InactivePageTable, Page, PageIter, PhysicalAddress, VirtualAddress};
 
 #[derive(Debug)]
 pub struct Grant {
@@ -63,9 +63,9 @@ impl Grant {
         let start_page = Page::containing_address(from);
         let end_page = Page::containing_address(VirtualAddress::new(from.get() + size - 1));
         for page in Page::range_inclusive(start_page, end_page) {
-            let frame = active_table.translate_page(page).expect(
-                "grant references unmapped memory",
-            );
+            let frame = active_table
+                .translate_page(page)
+                .expect("grant references unmapped memory");
             frames.push_back(frame);
         }
 
@@ -73,9 +73,9 @@ impl Grant {
             let start_page = Page::containing_address(to);
             let end_page = Page::containing_address(VirtualAddress::new(to.get() + size - 1));
             for page in Page::range_inclusive(start_page, end_page) {
-                let frame = frames.pop_front().expect(
-                    "grant did not find enough frames",
-                );
+                let frame = frames
+                    .pop_front()
+                    .expect("grant did not find enough frames");
                 let result = mapper.map_to(page, frame, flags);
                 // Ignore result due to mapping on inactive table
                 unsafe {
@@ -173,9 +173,9 @@ impl SharedMemory {
                 f(&mut *memory)
             }
             SharedMemory::Borrowed(ref memory_weak) => {
-                let memory_lock = memory_weak.upgrade().expect(
-                    "SharedMemory::Borrowed no longer valid",
-                );
+                let memory_lock = memory_weak
+                    .upgrade()
+                    .expect("SharedMemory::Borrowed no longer valid");
                 let mut memory = memory_lock.lock();
                 f(&mut *memory)
             }
@@ -184,9 +184,9 @@ impl SharedMemory {
 
     pub fn borrow(&self) -> SharedMemory {
         match *self {
-            SharedMemory::Owned(ref memory_lock) => SharedMemory::Borrowed(
-                Arc::downgrade(memory_lock),
-            ),
+            SharedMemory::Owned(ref memory_lock) => {
+                SharedMemory::Borrowed(Arc::downgrade(memory_lock))
+            }
             SharedMemory::Borrowed(ref memory_lock) => SharedMemory::Borrowed(memory_lock.clone()),
         }
     }
@@ -286,8 +286,7 @@ impl Memory {
 
             active_table.with(new_table, temporary_page, |mapper| {
                 let new_page = Page::containing_address(VirtualAddress::new(
-                    page.start_address().get() - self.start.get() +
-                        new_start.get(),
+                    page.start_address().get() - self.start.get() + new_start.get(),
                 ));
                 let result = mapper.map_to(new_page, frame, self.flags);
                 // This is not the active table, so the flush can be ignored

@@ -26,7 +26,8 @@ pub unsafe extern "C" fn kreset() -> ! {
 pub unsafe extern "C" fn kstop() -> ! {
     println!("kstop");
 
-    #[cfg(feature = "acpi")] acpi::set_global_s_state(5);
+    #[cfg(feature = "acpi")]
+    acpi::set_global_s_state(5);
 
     // Magic shutdown code for bochs and qemu (older versions).
     for c in "Shutdown".bytes() {

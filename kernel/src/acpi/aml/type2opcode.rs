@@ -2,16 +2,16 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::{AmlError, parse_aml_with_scope};
-use super::parser::{AmlParseType, ParseResult, AmlExecutionContext, ExecutionState};
-use super::namespace::{AmlValue, ObjectReference};
-use super::pkglength::parse_pkg_length;
-use super::termlist::{parse_term_arg, parse_method_invocation};
-use super::namestring::{parse_super_name, parse_target, parse_name_string, parse_simple_name};
 use super::dataobj::parse_data_ref_obj;
+use super::namespace::{AmlValue, ObjectReference};
+use super::namestring::{parse_name_string, parse_simple_name, parse_super_name, parse_target};
+use super::parser::{AmlExecutionContext, AmlParseType, ExecutionState, ParseResult};
+use super::pkglength::parse_pkg_length;
+use super::termlist::{parse_method_invocation, parse_term_arg};
+use super::{parse_aml_with_scope, AmlError};
 
-use time::monotonic;
 use acpi::SDT_POINTERS;
+use time::monotonic;
 
 #[derive(Debug, Clone)]
 pub enum MatchOpcode {
@@ -189,9 +189,8 @@ pub fn parse_def_var_package(data: &[u8], ctx: &mut AmlExecutionContext) -> Pars
     let mut elements = parse_package_elements_list(
         &data[1 + pkg_length_len + num_elements.len..1 + pkg_length],
         ctx,
-    )?
-        .val
-        .get_as_package()?;
+    )?.val
+    .get_as_package()?;
 
     let numelements = num_elements.val.get_as_integer()? as usize;
 
@@ -286,12 +285,10 @@ fn parse_def_ref_of(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
 
     let obj = parse_super_name(&data[1..], ctx)?;
     let res = match obj.val {
-        AmlValue::String(ref s) => {
-            match ctx.get(AmlValue::String(s.clone()))? {
-                AmlValue::None => return Err(AmlError::AmlValueError),
-                _ => ObjectReference::Object(s.clone()),
-            }
-        }
+        AmlValue::String(ref s) => match ctx.get(AmlValue::String(s.clone()))? {
+            AmlValue::None => return Err(AmlError::AmlValueError),
+            _ => ObjectReference::Object(s.clone()),
+        },
         AmlValue::ObjectReference(ref o) => o.clone(),
         _ => return Err(AmlError::AmlValueError),
     };
@@ -1153,17 +1150,15 @@ fn parse_def_cond_ref_of(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseRes
     let target = parse_target(&data[2 + obj.len..], ctx)?;
 
     let res = match obj.val {
-        AmlValue::String(ref s) => {
-            match ctx.get(AmlValue::String(s.clone()))? {
-                AmlValue::None => {
-                    return Ok(AmlParseType {
-                        val: AmlValue::Integer(0),
-                        len: 1 + obj.len + target.len,
-                    })
-                }
-                _ => ObjectReference::Object(s.clone()),
+        AmlValue::String(ref s) => match ctx.get(AmlValue::String(s.clone()))? {
+            AmlValue::None => {
+                return Ok(AmlParseType {
+                    val: AmlValue::Integer(0),
+                    len: 1 + obj.len + target.len,
+                })
             }
-        }
+            _ => ObjectReference::Object(s.clone()),
+        },
         AmlValue::ObjectReference(ref o) => o.clone(),
         _ => return Err(AmlError::AmlValueError),
     };
@@ -1431,13 +1426,15 @@ fn parse_def_load_table(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResu
         ctx,
     )?;
     let parameter_path = parse_term_arg(
-        &data[2 + signature.len + oem_id.len + oem_table_id.len +
-                  root_path.len..],
+        &data[2 + signature.len + oem_id.len + oem_table_id.len + root_path.len..],
         ctx,
     )?;
     let parameter_data = parse_term_arg(
-        &data[2 + signature.len + oem_id.len + oem_table_id.len +
-                  root_path.len + parameter_path.len..],
+        &data[2 + signature.len
+                  + oem_id.len
+                  + oem_table_id.len
+                  + root_path.len
+                  + parameter_path.len..],
         ctx,
     )?;
 
@@ -1461,16 +1458,26 @@ fn parse_def_load_table(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResu
 
             return Ok(AmlParseType {
                 val: AmlValue::DDBHandle((hdl, sdt_signature)),
-                len: 2 + signature.len + oem_id.len + oem_table_id.len + root_path.len +
-                    parameter_path.len + parameter_data.len,
+                len: 2
+                    + signature.len
+                    + oem_id.len
+                    + oem_table_id.len
+                    + root_path.len
+                    + parameter_path.len
+                    + parameter_data.len,
             });
         }
     }
 
     Ok(AmlParseType {
         val: AmlValue::IntegerConstant(0),
-        len: 2 + signature.len + oem_id.len + oem_table_id.len + root_path.len +
-            parameter_path.len + parameter_data.len,
+        len: 2
+            + signature.len
+            + oem_id.len
+            + oem_table_id.len
+            + root_path.len
+            + parameter_path.len
+            + parameter_data.len,
     })
 }
 
@@ -1592,8 +1599,11 @@ fn parse_def_match(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
 
                 return Ok(AmlParseType {
                     val: AmlValue::Integer(idx as u64),
-                    len: 3 + search_pkg.len + first_operand.len + second_operand.len +
-                        start_index.len,
+                    len: 3
+                        + search_pkg.len
+                        + first_operand.len
+                        + second_operand.len
+                        + start_index.len,
                 });
             }
         }
@@ -1669,8 +1679,11 @@ fn parse_def_match(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
 
                 return Ok(AmlParseType {
                     val: AmlValue::Integer(idx as u64),
-                    len: 3 + search_pkg.len + first_operand.len + second_operand.len +
-                        start_index.len,
+                    len: 3
+                        + search_pkg.len
+                        + first_operand.len
+                        + second_operand.len
+                        + start_index.len,
                 });
             }
         }
@@ -1747,8 +1760,11 @@ fn parse_def_match(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
 
                 return Ok(AmlParseType {
                     val: AmlValue::Integer(idx as u64),
-                    len: 3 + search_pkg.len + first_operand.len + second_operand.len +
-                        start_index.len,
+                    len: 3
+                        + search_pkg.len
+                        + first_operand.len
+                        + second_operand.len
+                        + start_index.len,
                 });
             }
         }

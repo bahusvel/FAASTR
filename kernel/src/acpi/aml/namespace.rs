@@ -1,18 +1,18 @@
 use alloc::boxed::Box;
+use alloc::btree_map::BTreeMap;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use alloc::btree_map::BTreeMap;
 
-use core::fmt::{Debug, Formatter, Error};
+use core::fmt::{Debug, Error, Formatter};
 use core::str::FromStr;
 
-use super::termlist::parse_term_list;
-use super::namedobj::{RegionSpace, FieldFlags};
+use super::namedobj::{FieldFlags, RegionSpace};
 use super::parser::{AmlExecutionContext, ExecutionState};
+use super::termlist::parse_term_list;
 use super::AmlError;
 
-use acpi::{SdtSignature, get_signature_from_index, get_index_from_signature};
+use acpi::{get_index_from_signature, get_signature_from_index, SdtSignature};
 
 #[derive(Clone)]
 pub enum FieldSelector {
@@ -170,48 +170,42 @@ impl AmlValue {
         match t {
             AmlValue::None => Ok(AmlValue::None),
             AmlValue::Uninitialized => Ok(self.clone()),
-            AmlValue::Alias(_) => {
-                match *self {
-                    AmlValue::Alias(_) => Ok(self.clone()),
-                    _ => Err(AmlError::AmlValueError),
-                }
-            }
+            AmlValue::Alias(_) => match *self {
+                AmlValue::Alias(_) => Ok(self.clone()),
+                _ => Err(AmlError::AmlValueError),
+            },
             AmlValue::Buffer(_) => Ok(AmlValue::Buffer(self.get_as_buffer()?)),
             AmlValue::BufferField(_) => Ok(AmlValue::BufferField(self.get_as_buffer_field()?)),
             AmlValue::DDBHandle(_) => Ok(AmlValue::DDBHandle(self.get_as_ddb_handle()?)),
-            AmlValue::DebugObject => {
-                match *self {
-                    AmlValue::DebugObject => Ok(self.clone()),
-                    _ => Err(AmlError::AmlValueError),
-                }
-            }
+            AmlValue::DebugObject => match *self {
+                AmlValue::DebugObject => Ok(self.clone()),
+                _ => Err(AmlError::AmlValueError),
+            },
             AmlValue::Device(_) => Ok(AmlValue::Device(self.get_as_device()?)),
             AmlValue::Event(_) => Ok(AmlValue::Event(self.get_as_event()?)),
             AmlValue::FieldUnit(_) => Ok(AmlValue::FieldUnit(self.get_as_field_unit()?)),
             AmlValue::Integer(_) => Ok(AmlValue::Integer(self.get_as_integer()?)),
-            AmlValue::IntegerConstant(_) => Ok(AmlValue::IntegerConstant(
-                self.get_as_integer_constant()?,
-            )),
+            AmlValue::IntegerConstant(_) => {
+                Ok(AmlValue::IntegerConstant(self.get_as_integer_constant()?))
+            }
             AmlValue::Method(_) => Ok(AmlValue::Method(self.get_as_method()?)),
             AmlValue::Mutex(_) => Ok(AmlValue::Mutex(self.get_as_mutex()?)),
-            AmlValue::ObjectReference(_) => Ok(AmlValue::ObjectReference(
-                self.get_as_object_reference()?,
-            )),
-            AmlValue::OperationRegion(_) => {
-                match *self {
-                    AmlValue::OperationRegion(_) => Ok(self.clone()),
-                    _ => Err(AmlError::AmlValueError),
-                }
+            AmlValue::ObjectReference(_) => {
+                Ok(AmlValue::ObjectReference(self.get_as_object_reference()?))
             }
+            AmlValue::OperationRegion(_) => match *self {
+                AmlValue::OperationRegion(_) => Ok(self.clone()),
+                _ => Err(AmlError::AmlValueError),
+            },
             AmlValue::Package(_) => Ok(AmlValue::Package(self.get_as_package()?)),
             AmlValue::String(_) => Ok(AmlValue::String(self.get_as_string()?)),
-            AmlValue::PowerResource(_) => Ok(
-                AmlValue::PowerResource(self.get_as_power_resource()?),
-            ),
+            AmlValue::PowerResource(_) => {
+                Ok(AmlValue::PowerResource(self.get_as_power_resource()?))
+            }
             AmlValue::Processor(_) => Ok(AmlValue::Processor(self.get_as_processor()?)),
-            AmlValue::RawDataBuffer(_) => Ok(
-                AmlValue::RawDataBuffer(self.get_as_raw_data_buffer()?),
-            ),
+            AmlValue::RawDataBuffer(_) => {
+                Ok(AmlValue::RawDataBuffer(self.get_as_raw_data_buffer()?))
+            }
             AmlValue::ThermalZone(_) => Ok(AmlValue::ThermalZone(self.get_as_thermal_zone()?)),
         }
     }

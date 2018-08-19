@@ -8,9 +8,9 @@ use spin::Mutex;
 use context::arch;
 use context::memory::{Grant, Memory, SharedMemory};
 use device;
+use sync::WaitMap;
 use syscall::data::SigAction;
 use syscall::flag::SIG_DFL;
-use sync::WaitMap;
 
 /// Unique identifier for a context (i.e. `pid`).
 use core::sync::atomic::AtomicUsize;
@@ -158,13 +158,13 @@ impl Context {
             env: BTreeMap::new(),
             actions: Arc::new(Mutex::new(vec![
                 (
-                SigAction {
-                    sa_handler: unsafe { mem::transmute(SIG_DFL) },
-                    sa_mask: [0; 2],
-                    sa_flags: 0,
-                },
-                0
-            );
+                    SigAction {
+                        sa_handler: unsafe { mem::transmute(SIG_DFL) },
+                        sa_mask: [0; 2],
+                        sa_flags: 0,
+                    },
+                    0
+                );
                 128
             ])),
         }

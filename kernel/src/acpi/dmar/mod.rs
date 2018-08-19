@@ -1,12 +1,12 @@
 use core::mem;
 
-use super::sdt::Sdt;
 use self::drhd::Drhd;
+use super::sdt::Sdt;
 use memory::Frame;
-use paging::{ActivePageTable, PhysicalAddress};
 use paging::entry::EntryFlags;
+use paging::{ActivePageTable, PhysicalAddress};
 
-use super::{find_sdt, load_table, get_sdt_signature};
+use super::{find_sdt, get_sdt_signature, load_table};
 
 pub mod drhd;
 
@@ -38,24 +38,12 @@ impl Dmar {
                 match dmar_entry {
                     DmarEntry::Drhd(dmar_drhd) => {
                         let drhd = dmar_drhd.get(active_table);
-                        println!("VER: {:X}", {
-                            drhd.version
-                        });
-                        println!("CAP: {:X}", {
-                            drhd.cap
-                        });
-                        println!("EXT_CAP: {:X}", {
-                            drhd.ext_cap
-                        });
-                        println!("GCMD: {:X}", {
-                            drhd.gl_cmd
-                        });
-                        println!("GSTS: {:X}", {
-                            drhd.gl_sts
-                        });
-                        println!("RT: {:X}", {
-                            drhd.root_table
-                        });
+                        println!("VER: {:X}", { drhd.version });
+                        println!("CAP: {:X}", { drhd.cap });
+                        println!("EXT_CAP: {:X}", { drhd.ext_cap });
+                        println!("GCMD: {:X}", { drhd.gl_cmd });
+                        println!("GSTS: {:X}", { drhd.gl_sts });
+                        println!("RT: {:X}", { drhd.root_table });
                     }
                     _ => (),
                 }
@@ -107,11 +95,10 @@ pub struct DmarDrhd {
 
 impl DmarDrhd {
     pub fn get(&self, active_table: &mut ActivePageTable) -> &'static mut Drhd {
-        let result =
-            active_table.identity_map(
-                Frame::containing_address(PhysicalAddress::new(self.base as usize)),
-                EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
-            );
+        let result = active_table.identity_map(
+            Frame::containing_address(PhysicalAddress::new(self.base as usize)),
+            EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+        );
         result.flush(active_table);
         unsafe { &mut *(self.base as *mut Drhd) }
     }

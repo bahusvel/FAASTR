@@ -13,7 +13,7 @@ pub use self::time::*;
 pub use self::validate::*;
 
 use self::data::{SigAction, TimeSpec};
-use self::error::{Error, Result, ENOSYS, EINVAL};
+use self::error::{Error, Result, EINVAL, ENOSYS};
 use self::number::*;
 use alloc::str::from_utf8;
 
@@ -66,26 +66,18 @@ pub fn syscall(
         //SYS_* is declared in kernel/syscall/src/number.rs
         match a {
             SYS_YIELD => sched_yield(),
-            SYS_NANOSLEEP => {
-                nanosleep(
-                    validate_slice(b as *const TimeSpec, 1).map(|req| &req[0])?,
-                    if c == 0 {
-                        None
-                    } else {
-                        Some(validate_slice_mut(c as *mut TimeSpec, 1).map(
-                            |rem| &mut rem[0],
-                        )?)
-                    },
-                )
-            }
-            SYS_CLOCK_GETTIME => {
-                clock_gettime(
-                    b,
-                    validate_slice_mut(c as *mut TimeSpec, 1).map(
-                        |time| &mut time[0],
-                    )?,
-                )
-            }
+            SYS_NANOSLEEP => nanosleep(
+                validate_slice(b as *const TimeSpec, 1).map(|req| &req[0])?,
+                if c == 0 {
+                    None
+                } else {
+                    Some(validate_slice_mut(c as *mut TimeSpec, 1).map(|rem| &mut rem[0])?)
+                },
+            ),
+            SYS_CLOCK_GETTIME => clock_gettime(
+                b,
+                validate_slice_mut(c as *mut TimeSpec, 1).map(|time| &mut time[0])?,
+            ),
             /*
             SYS_FUTEX => {
                 futex(
@@ -125,24 +117,20 @@ pub fn syscall(
                 )
             }
             SYS_IOPL => iopl(b, stack),
-            SYS_SIGACTION => {
-                sigaction(
-                    b,
-                    if c == 0 {
-                        None
-                    } else {
-                        Some(validate_slice(c as *const SigAction, 1).map(|act| &act[0])?)
-                    },
-                    if d == 0 {
-                        None
-                    } else {
-                        Some(validate_slice_mut(d as *mut SigAction, 1).map(|oldact| {
-                            &mut oldact[0]
-                        })?)
-                    },
-                    e,
-                )
-            }
+            SYS_SIGACTION => sigaction(
+                b,
+                if c == 0 {
+                    None
+                } else {
+                    Some(validate_slice(c as *const SigAction, 1).map(|act| &act[0])?)
+                },
+                if d == 0 {
+                    None
+                } else {
+                    Some(validate_slice_mut(d as *mut SigAction, 1).map(|oldact| &mut oldact[0])?)
+                },
+                e,
+            ),
             SYS_PHYSALLOC => physalloc(b),
             SYS_PHYSFREE => physfree(b, c),
             SYS_PHYSMAP => physmap(b, c, d),

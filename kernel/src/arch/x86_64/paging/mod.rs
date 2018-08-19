@@ -1,8 +1,8 @@
 //! # Paging
 //! Some code was borrowed from [Phil Opp's Blog](http://os.phil-opp.com/modifying-page-tables.html)
 
-use core::{mem, ptr};
 use core::ops::{Deref, DerefMut};
+use core::{mem, ptr};
 use x86::shared::{control_regs, msr, tlb};
 
 use memory::{allocate_frames, Frame};
@@ -43,7 +43,14 @@ unsafe fn init_pat() {
 
     msr::wrmsr(
         msr::IA32_PAT,
-        pat7 << 56 | pat6 << 48 | pat5 << 40 | pat4 << 32 | pat3 << 24 | pat2 << 16 | pat1 << 8 | pat0,
+        pat7 << 56
+            | pat6 << 48
+            | pat5 << 40
+            | pat4 << 32
+            | pat3 << 24
+            | pat2 << 16
+            | pat1 << 8
+            | pat0,
     );
 }
 
@@ -118,9 +125,9 @@ pub unsafe fn init(
 
     let mut active_table = ActivePageTable::new();
 
-    let mut temporary_page = TemporaryPage::new(Page::containing_address(
-        VirtualAddress::new(::USER_TMP_MISC_OFFSET),
-    ));
+    let mut temporary_page = TemporaryPage::new(Page::containing_address(VirtualAddress::new(
+        ::USER_TMP_MISC_OFFSET,
+    )));
 
     let mut new_table = {
         let frame = allocate_frames(1).expect("no more frames in paging::init new_table");
@@ -130,11 +137,22 @@ pub unsafe fn init(
     active_table.with(&mut new_table, &mut temporary_page, |mapper| {
         // Remap stack writable, no execute
         {
-            let start_frame = Frame::containing_address(PhysicalAddress::new(stack_start - ::KERNEL_OFFSET));
-            let end_frame = Frame::containing_address(PhysicalAddress::new(stack_end - ::KERNEL_OFFSET - 1));
+            let start_frame =
+                Frame::containing_address(PhysicalAddress::new(stack_start - ::KERNEL_OFFSET));
+            let end_frame =
+                Frame::containing_address(PhysicalAddress::new(stack_end - ::KERNEL_OFFSET - 1));
             for frame in Frame::range_inclusive(start_frame, end_frame) {
-                let page = Page::containing_address(VirtualAddress::new(frame.start_address().get() + ::KERNEL_OFFSET));
-                let result = mapper.map_to(page, frame, EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE);
+                let page = Page::containing_address(VirtualAddress::new(
+                    frame.start_address().get() + ::KERNEL_OFFSET,
+                ));
+                let result = mapper.map_to(
+                    page,
+                    frame,
+                    EntryFlags::PRESENT
+                        | EntryFlags::GLOBAL
+                        | EntryFlags::NO_EXECUTE
+                        | EntryFlags::WRITABLE,
+                );
                 // The flush can be ignored as this is not the active table. See later active_table.switch
                 result.ignore();
             }
@@ -149,10 +167,10 @@ pub unsafe fn init(
                 let virt_addr = phys_addr + ::KERNEL_OFFSET;
 
                 macro_rules! in_section {
-                    ($n: ident) => (
-                        virt_addr >= & concat_idents!(__, $n, _start) as *const u8 as usize &&
-                        virt_addr < & concat_idents!(__, $n, _end) as *const u8 as usize
-                    );
+                    ($n: ident) => {
+                        virt_addr >= &concat_idents!(__, $n, _start) as *const u8 as usize
+                            && virt_addr < &concat_idents!(__, $n, _end) as *const u8 as usize
+                    };
                 }
 
                 let flags = if in_section!(text) {
@@ -163,13 +181,19 @@ pub unsafe fn init(
                     EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE
                 } else if in_section!(data) {
                     // Remap data writable, no execute
-                    EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE
+                    EntryFlags::PRESENT
+                        | EntryFlags::GLOBAL
+                        | EntryFlags::NO_EXECUTE
+                        | EntryFlags::WRITABLE
                 } else if in_section!(tdata) {
                     // Remap tdata master read-only, no execute
                     EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE
                 } else if in_section!(bss) {
                     // Remap bss writable, no execute
-                    EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE
+                    EntryFlags::PRESENT
+                        | EntryFlags::GLOBAL
+                        | EntryFlags::NO_EXECUTE
+                        | EntryFlags::WRITABLE
                 } else {
                     // Remap anything else read-only, no execute
                     EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE
@@ -184,7 +208,7 @@ pub unsafe fn init(
 
         // Map tdata and tbss
         {
-            let size = & __tbss_end as *const _ as usize - & __tdata_start as *const _ as usize;
+            let size = &__tbss_end as *const _ as usize - &__tdata_start as *const _ as usize;
 
             let start = ::KERNEL_PERCPU_OFFSET + ::KERNEL_PERCPU_SIZE * cpu_id;
             let end = start + size;
@@ -192,7 +216,13 @@ pub unsafe fn init(
             let start_page = Page::containing_address(VirtualAddress::new(start));
             let end_page = Page::containing_address(VirtualAddress::new(end - 1));
             for page in Page::range_inclusive(start_page, end_page) {
-                let result = mapper.map(page, EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE);
+                let result = mapper.map(
+                    page,
+                    EntryFlags::PRESENT
+                        | EntryFlags::GLOBAL
+                        | EntryFlags::NO_EXECUTE
+                        | EntryFlags::WRITABLE,
+                );
                 // The flush can be ignored as this is not the active table. See later active_table.switch
                 result.ignore();
             }
@@ -229,14 +259,14 @@ pub unsafe fn init_ap(
 
     let mut new_table = InactivePageTable::from_address(bsp_table);
 
-    let mut temporary_page = TemporaryPage::new(Page::containing_address(
-        VirtualAddress::new(::USER_TMP_MISC_OFFSET),
-    ));
+    let mut temporary_page = TemporaryPage::new(Page::containing_address(VirtualAddress::new(
+        ::USER_TMP_MISC_OFFSET,
+    )));
 
     active_table.with(&mut new_table, &mut temporary_page, |mapper| {
         // Map tdata and tbss
         {
-            let size = & __tbss_end as *const _ as usize - & __tdata_start as *const _ as usize;
+            let size = &__tbss_end as *const _ as usize - &__tdata_start as *const _ as usize;
 
             let start = ::KERNEL_PERCPU_OFFSET + ::KERNEL_PERCPU_SIZE * cpu_id;
             let end = start + size;
@@ -244,7 +274,13 @@ pub unsafe fn init_ap(
             let start_page = Page::containing_address(VirtualAddress::new(start));
             let end_page = Page::containing_address(VirtualAddress::new(end - 1));
             for page in Page::range_inclusive(start_page, end_page) {
-                let result = mapper.map(page, EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE);
+                let result = mapper.map(
+                    page,
+                    EntryFlags::PRESENT
+                        | EntryFlags::GLOBAL
+                        | EntryFlags::NO_EXECUTE
+                        | EntryFlags::WRITABLE,
+                );
                 // The flush can be ignored as this is not the active table. See later active_table.switch
                 result.ignore();
             }
@@ -255,7 +291,9 @@ pub unsafe fn init_ap(
                 let start_frame = Frame::containing_address(PhysicalAddress::new(start));
                 let end_frame = Frame::containing_address(PhysicalAddress::new(end - 1));
                 for frame in Frame::range_inclusive(start_frame, end_frame) {
-                    let page = Page::containing_address(VirtualAddress::new(frame.start_address().get() + ::KERNEL_OFFSET));
+                    let page = Page::containing_address(VirtualAddress::new(
+                        frame.start_address().get() + ::KERNEL_OFFSET,
+                    ));
                     let result = mapper.map_to(page, frame, flags);
                     // The flush can be ignored as this is not the active table. See later active_table.switch
                     result.ignore();
@@ -264,7 +302,14 @@ pub unsafe fn init_ap(
         };
 
         // Remap stack writable, no execute
-        remap(stack_start - ::KERNEL_OFFSET, stack_end - ::KERNEL_OFFSET, EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE);
+        remap(
+            stack_start - ::KERNEL_OFFSET,
+            stack_end - ::KERNEL_OFFSET,
+            EntryFlags::PRESENT
+                | EntryFlags::GLOBAL
+                | EntryFlags::NO_EXECUTE
+                | EntryFlags::WRITABLE,
+        );
     });
 
     // This switches the active table, which is setup by the bootloader, to a correct table
@@ -294,7 +339,9 @@ impl DerefMut for ActivePageTable {
 
 impl ActivePageTable {
     pub unsafe fn new() -> ActivePageTable {
-        ActivePageTable { mapper: Mapper::new() }
+        ActivePageTable {
+            mapper: Mapper::new(),
+        }
     }
 
     pub fn switch(&mut self, new_table: InactivePageTable) -> InactivePageTable {
@@ -330,23 +377,21 @@ impl ActivePageTable {
         F: FnOnce(&mut Mapper),
     {
         {
-            let backup = Frame::containing_address(PhysicalAddress::new(
-                unsafe { control_regs::cr3() as usize },
-            ));
+            let backup = Frame::containing_address(PhysicalAddress::new(unsafe {
+                control_regs::cr3() as usize
+            }));
 
             // map temporary_page to current p4 table
             let p4_table = temporary_page.map_table_frame(
                 backup.clone(),
-                EntryFlags::PRESENT | EntryFlags::WRITABLE |
-                    EntryFlags::NO_EXECUTE,
+                EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
                 self,
             );
 
             // overwrite recursive mapping
             self.p4_mut()[::RECURSIVE_PAGE_PML4].set(
                 table.p4_frame.clone(),
-                EntryFlags::PRESENT | EntryFlags::WRITABLE |
-                    EntryFlags::NO_EXECUTE,
+                EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
             );
             self.flush_all();
 
@@ -356,8 +401,7 @@ impl ActivePageTable {
             // restore recursive mapping to original p4 table
             p4_table[::RECURSIVE_PAGE_PML4].set(
                 backup,
-                EntryFlags::PRESENT | EntryFlags::WRITABLE |
-                    EntryFlags::NO_EXECUTE,
+                EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
             );
             self.flush_all();
         }
@@ -383,8 +427,7 @@ impl InactivePageTable {
         {
             let table = temporary_page.map_table_frame(
                 frame.clone(),
-                EntryFlags::PRESENT | EntryFlags::WRITABLE |
-                    EntryFlags::NO_EXECUTE,
+                EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
                 active_table,
             );
             // now we are able to zero the table
@@ -392,8 +435,7 @@ impl InactivePageTable {
             // set up recursive mapping for the table
             table[::RECURSIVE_PAGE_PML4].set(
                 frame.clone(),
-                EntryFlags::PRESENT | EntryFlags::WRITABLE |
-                    EntryFlags::NO_EXECUTE,
+                EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
             );
         }
         temporary_page.unmap(active_table);
@@ -402,7 +444,9 @@ impl InactivePageTable {
     }
 
     pub unsafe fn from_address(cr3: usize) -> InactivePageTable {
-        InactivePageTable { p4_frame: Frame::containing_address(PhysicalAddress::new(cr3)) }
+        InactivePageTable {
+            p4_frame: Frame::containing_address(PhysicalAddress::new(cr3)),
+        }
     }
 
     pub unsafe fn address(&self) -> usize {
@@ -468,7 +512,9 @@ impl Page {
     pub fn containing_address(address: VirtualAddress) -> Page {
         //TODO assert!(address.get() < 0x0000_8000_0000_0000 || address.get() >= 0xffff_8000_0000_0000,
         //    "invalid address: 0x{:x}", address.get());
-        Page { number: address.get() / PAGE_SIZE }
+        Page {
+            number: address.get() / PAGE_SIZE,
+        }
     }
 
     pub fn range_inclusive(start: Page, end: Page) -> PageIter {

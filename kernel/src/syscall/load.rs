@@ -1,14 +1,14 @@
-use syscall::error::*;
-use alloc::{BTreeMap, Vec};
-use elf::{self, program_header};
-use core::str;
 use alloc::boxed::Box;
-use paging::{ActivePageTable, VirtualAddress};
-use paging::entry::EntryFlags;
 use alloc::string::String;
+use alloc::{BTreeMap, Vec};
 use core::alloc::{GlobalAlloc, Layout};
-use memory::Frame;
 use core::ops::{Deref, DerefMut};
+use core::str;
+use elf::{self, program_header};
+use memory::Frame;
+use paging::entry::EntryFlags;
+use paging::{ActivePageTable, VirtualAddress};
+use syscall::error::*;
 
 type FunctionPtr = usize;
 
@@ -80,9 +80,8 @@ impl<'a> Iterator for MappingIter<'a> {
         let addr = unsafe {
             self.table
                 .translate(VirtualAddress::new(
-                    self.pages.as_ptr().offset(self.next) as usize,
-                ))
-                .expect("Mapping page is unmapped")
+                    self.pages.as_ptr().offset(self.next) as usize
+                )).expect("Mapping page is unmapped")
         };
         self.next += 1;
         Some(Frame::containing_address(addr))
@@ -133,9 +132,7 @@ pub fn load(name: &str, data: &[u8]) -> Result<Module> {
                 pages[i as usize] = 0;
             }
             //Load in the section
-            pages.copy_from_slice(
-                &elf.data[segment.p_offset as usize..segment.p_filesz as usize],
-            );
+            pages.copy_from_slice(&elf.data[segment.p_offset as usize..segment.p_filesz as usize]);
             //Zero out tail
             for i in size..pages.len() {
                 pages[i] = 0;

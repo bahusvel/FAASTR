@@ -7,8 +7,8 @@ use core::sync::atomic::Ordering;
 use paging;
 use spin::RwLock;
 
-use syscall::error::{Result, Error, EAGAIN};
 use super::context::{Context, ContextId};
+use syscall::error::{Error, Result, EAGAIN};
 
 /// Context list type
 pub struct ContextList {
@@ -62,9 +62,10 @@ impl ContextList {
                 .is_none()
         );
 
-        Ok(self.map.get(&id).expect(
-            "Failed to insert new context. ID is out of bounds.",
-        ))
+        Ok(self
+            .map
+            .get(&id)
+            .expect("Failed to insert new context. ID is out of bounds."))
     }
 
     /// Spawn a context from a function.
@@ -73,9 +74,9 @@ impl ContextList {
         {
             let mut context = context_lock.write();
             let mut fx = unsafe {
-                Box::from_raw(::ALLOCATOR.alloc(
-                    Layout::from_size_align_unchecked(512, 16),
-                ) as *mut [u8; 512])
+                Box::from_raw(
+                    ::ALLOCATOR.alloc(Layout::from_size_align_unchecked(512, 16)) as *mut [u8; 512],
+                )
             };
             for b in fx.iter_mut() {
                 *b = 0;
@@ -87,9 +88,9 @@ impl ContextList {
                 let func_ptr = stack.as_mut_ptr().offset(offset as isize);
                 *(func_ptr as *mut usize) = func as usize;
             }
-            context.arch.set_page_table(unsafe {
-                paging::ActivePageTable::new().address()
-            });
+            context
+                .arch
+                .set_page_table(unsafe { paging::ActivePageTable::new().address() });
             context.arch.set_fx(fx.as_ptr() as usize);
             context.arch.set_stack(stack.as_ptr() as usize + offset);
             context.kfx = Some(fx);

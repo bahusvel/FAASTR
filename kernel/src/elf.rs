@@ -99,9 +99,10 @@ impl<'a> Iterator for ElfSections<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.i < self.header.e_shnum as usize {
             let item = unsafe {
-                &*((self.data.as_ptr() as usize + self.header.e_shoff as usize +
-                        self.i * self.header.e_shentsize as usize) as
-                       *const section_header::SectionHeader)
+                &*((self.data.as_ptr() as usize
+                    + self.header.e_shoff as usize
+                    + self.i * self.header.e_shentsize as usize)
+                    as *const section_header::SectionHeader)
             };
             self.i += 1;
             Some(item)
@@ -122,9 +123,10 @@ impl<'a> Iterator for ElfSegments<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.i < self.header.e_phnum as usize {
             let item = unsafe {
-                &*((self.data.as_ptr() as usize + self.header.e_phoff as usize +
-                        self.i * self.header.e_phentsize as usize) as
-                       *const program_header::ProgramHeader)
+                &*((self.data.as_ptr() as usize
+                    + self.header.e_phoff as usize
+                    + self.i * self.header.e_phentsize as usize)
+                    as *const program_header::ProgramHeader)
             };
             self.i += 1;
             Some(item)
@@ -146,8 +148,9 @@ impl<'a> Iterator for ElfSymbols<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.i < (self.symtab.sh_size as usize) / sym::SIZEOF_SYM {
             let item = unsafe {
-                &*((self.data.as_ptr() as usize + self.symtab.sh_offset as usize +
-                        self.i * sym::SIZEOF_SYM) as *const sym::Sym)
+                &*((self.data.as_ptr() as usize
+                    + self.symtab.sh_offset as usize
+                    + self.i * sym::SIZEOF_SYM) as *const sym::Sym)
             };
             self.i += 1;
             Some(item)

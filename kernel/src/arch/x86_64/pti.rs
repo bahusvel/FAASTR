@@ -4,9 +4,9 @@ use core::ptr;
 #[cfg(feature = "pti")]
 use memory::Frame;
 #[cfg(feature = "pti")]
-use paging::ActivePageTable;
-#[cfg(feature = "pti")]
 use paging::entry::EntryFlags;
+#[cfg(feature = "pti")]
+use paging::ActivePageTable;
 
 #[cfg(feature = "pti")]
 #[thread_local]

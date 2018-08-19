@@ -39,13 +39,8 @@ impl DebugDisplay {
 
             self.display.scroll(d_y * 16);
 
-            self.display.rect(
-                0,
-                (self.h - d_y) * 16,
-                self.w * 8,
-                d_y * 16,
-                0x000000,
-            );
+            self.display
+                .rect(0, (self.h - d_y) * 16, self.w * 8, d_y * 16, 0x000000);
 
             self.display.sync(0, 0, self.w * 8, self.h * 16);
 

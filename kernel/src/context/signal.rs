@@ -4,14 +4,14 @@ use core::mem;
 use context::{contexts, switch, Status, WaitpidKey};
 use start::usermode;
 use syscall;
-use syscall::flag::{SIG_DFL, SIG_IGN, SIGCHLD, SIGCONT, SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU};
+use syscall::flag::{SIGCHLD, SIGCONT, SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU, SIG_DFL, SIG_IGN};
 
 pub extern "C" fn signal_handler(sig: usize) {
     let (action, restorer) = {
         let contexts = contexts();
-        let context_lock = contexts.current().expect(
-            "context::signal_handler not inside of context",
-        );
+        let context_lock = contexts
+            .current()
+            .expect("context::signal_handler not inside of context");
         let context = context_lock.read();
         let actions = context.actions.lock();
         actions[sig]
@@ -30,9 +30,9 @@ pub extern "C" fn signal_handler(sig: usize) {
                     let contexts = contexts();
 
                     let (pid, ppid) = {
-                        let context_lock = contexts.current().expect(
-                            "context::signal_handler not inside of context",
-                        );
+                        let context_lock = contexts
+                            .current()
+                            .expect("context::signal_handler not inside of context");
                         let mut context = context_lock.write();
                         context.status = Status::Runnable;
                         (context.id, context.ppid)
@@ -63,9 +63,9 @@ pub extern "C" fn signal_handler(sig: usize) {
                     let contexts = contexts();
 
                     let (pid, ppid) = {
-                        let context_lock = contexts.current().expect(
-                            "context::signal_handler not inside of context",
-                        );
+                        let context_lock = contexts
+                            .current()
+                            .expect("context::signal_handler not inside of context");
                         let mut context = context_lock.write();
                         context.status = Status::Stopped(sig);
                         (context.id, context.ppid)

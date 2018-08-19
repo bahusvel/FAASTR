@@ -8,11 +8,11 @@ use core::intrinsics;
 use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use context::{self, Context};
-use time;
 use syscall::data::TimeSpec;
-use syscall::error::{Error, Result, ESRCH, EAGAIN, EINVAL};
-use syscall::flag::{FUTEX_WAIT, FUTEX_WAKE, FUTEX_REQUEUE};
+use syscall::error::{Error, Result, EAGAIN, EINVAL, ESRCH};
+use syscall::flag::{FUTEX_REQUEUE, FUTEX_WAIT, FUTEX_WAKE};
 use syscall::validate::{validate_slice, validate_slice_mut};
+use time;
 
 type FutexList = VecDeque<(usize, Arc<RwLock<Context>>)>;
 
@@ -38,9 +38,7 @@ pub fn futex(addr: &mut i32, op: usize, val: i32, val2: usize, addr2: *mut i32) 
     match op {
         FUTEX_WAIT => {
             let timeout_opt = if val2 != 0 {
-                Some(validate_slice(val2 as *const TimeSpec, 1).map(
-                    |req| &req[0],
-                )?)
+                Some(validate_slice(val2 as *const TimeSpec, 1).map(|req| &req[0])?)
             } else {
                 None
             };
@@ -118,9 +116,7 @@ pub fn futex(addr: &mut i32, op: usize, val: i32, val2: usize, addr2: *mut i32) 
             Ok(woken)
         }
         FUTEX_REQUEUE => {
-            let addr2_safe = validate_slice_mut(addr2, 1).map(
-                |addr2_safe| &mut addr2_safe[0],
-            )?;
+            let addr2_safe = validate_slice_mut(addr2, 1).map(|addr2_safe| &mut addr2_safe[0])?;
 
             let mut woken = 0;
             let mut requeued = 0;

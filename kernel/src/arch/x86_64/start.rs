@@ -2,13 +2,12 @@
 /// It is increcibly unsafe, and should be minimal in nature
 /// It must create the IDT with the correct entries, those entries are
 /// defined in other files inside of the `arch` module
-
 use core::slice;
-use core::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering, ATOMIC_BOOL_INIT, ATOMIC_USIZE_INIT};
 
-use allocator;
 #[cfg(feature = "acpi")]
 use acpi;
+use allocator;
 #[cfg(feature = "graphical_debug")]
 use arch::x86_64::graphical_debug;
 use arch::x86_64::pti;
@@ -115,13 +114,15 @@ pub unsafe extern "C" fn kstart(args_ptr: *const KernelArgs) -> ! {
         allocator::init(&mut active_table);
 
         // Use graphical debug
-        #[cfg(feature = "graphical_debug")] graphical_debug::init(&mut active_table);
+        #[cfg(feature = "graphical_debug")]
+        graphical_debug::init(&mut active_table);
 
         // Initialize devices
         device::init(&mut active_table);
 
         // Read ACPI tables, starts APs
-        #[cfg(feature = "acpi")] acpi::init(&mut active_table);
+        #[cfg(feature = "acpi")]
+        acpi::init(&mut active_table);
 
         // Initialize all of the non-core devices not otherwise needed to complete initialization
         device::init_noncore();
@@ -130,7 +131,8 @@ pub unsafe extern "C" fn kstart(args_ptr: *const KernelArgs) -> ! {
         memory::init_noncore();
 
         // Stop graphical debug
-        #[cfg(feature = "graphical_debug")] graphical_debug::fini(&mut active_table);
+        #[cfg(feature = "graphical_debug")]
+        graphical_debug::fini(&mut active_table);
 
         BSP_READY.store(true, Ordering::SeqCst);
 

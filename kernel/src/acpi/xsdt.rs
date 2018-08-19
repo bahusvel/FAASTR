@@ -1,8 +1,8 @@
-use core::mem;
 use alloc::boxed::Box;
+use core::mem;
 
-use super::sdt::Sdt;
 use super::rxsdt::Rxsdt;
+use super::sdt::Sdt;
 
 #[derive(Debug)]
 pub struct Xsdt(&'static Sdt);

@@ -1,13 +1,13 @@
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
-use super::AmlError;
-use super::parser::{AmlParseType, ParseResult, AmlExecutionContext, ExecutionState};
 use super::namespace::{AmlValue, ObjectReference};
+use super::parser::{AmlExecutionContext, AmlParseType, ExecutionState, ParseResult};
+use super::AmlError;
 
-use super::type2opcode::{parse_def_buffer, parse_def_package, parse_def_var_package};
-use super::termlist::parse_term_arg;
 use super::namestring::parse_super_name;
+use super::termlist::parse_term_arg;
+use super::type2opcode::{parse_def_buffer, parse_def_package, parse_def_var_package};
 
 pub fn parse_data_obj(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
     match ctx.state {
@@ -48,15 +48,13 @@ pub fn parse_data_ref_obj(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseRe
     };
 
     match parse_super_name(data, ctx) {
-        Ok(res) => {
-            match res.val {
-                AmlValue::String(s) => Ok(AmlParseType {
-                    val: AmlValue::ObjectReference(ObjectReference::Object(s)),
-                    len: res.len,
-                }),
-                _ => Ok(res),
-            }
-        }
+        Ok(res) => match res.val {
+            AmlValue::String(s) => Ok(AmlParseType {
+                val: AmlValue::ObjectReference(ObjectReference::Object(s)),
+                len: res.len,
+            }),
+            _ => Ok(res),
+        },
         Err(e) => Err(e),
     }
 }
@@ -126,8 +124,10 @@ fn parse_computational_data(data: &[u8], ctx: &mut AmlExecutionContext) -> Parse
             })
         }
         0x0C => {
-            let res = (data[1] as u32) + ((data[2] as u32) << 8) + ((data[3] as u32) << 16) +
-                ((data[4] as u32) << 24);
+            let res = (data[1] as u32)
+                + ((data[2] as u32) << 8)
+                + ((data[3] as u32) << 16)
+                + ((data[4] as u32) << 24);
 
             Ok(AmlParseType {
                 val: AmlValue::Integer(res as u64),
@@ -152,11 +152,14 @@ fn parse_computational_data(data: &[u8], ctx: &mut AmlExecutionContext) -> Parse
             }
         }
         0x0E => {
-            let res = (data[1] as u64) + ((data[2] as u64) << 8) + ((data[3] as u64) << 16) +
-                ((data[4] as u64) << 24) +
-                ((data[5] as u64) << 32) + ((data[6] as u64) << 40) +
-                ((data[7] as u64) << 48) +
-                ((data[8] as u64) << 56);
+            let res = (data[1] as u64)
+                + ((data[2] as u64) << 8)
+                + ((data[3] as u64) << 16)
+                + ((data[4] as u64) << 24)
+                + ((data[5] as u64) << 32)
+                + ((data[6] as u64) << 40)
+                + ((data[7] as u64) << 48)
+                + ((data[8] as u64) << 56);
 
             Ok(AmlParseType {
                 val: AmlValue::Integer(res as u64),

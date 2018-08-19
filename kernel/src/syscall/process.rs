@@ -5,21 +5,23 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::{intrinsics, mem, str};
 use spin::Mutex;
 
-use memory::allocate_frames;
-use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress};
-use paging::entry::EntryFlags;
-use paging::temporary_page::TemporaryPage;
-use start::usermode;
-use interrupt;
 use context;
-use context::{ContextId, WaitpidKey, Status};
+use context::{ContextId, Status, WaitpidKey};
 #[cfg(not(feature = "doc"))]
 use elf::{self, program_header};
+use interrupt;
+use memory::allocate_frames;
+use paging::entry::EntryFlags;
+use paging::temporary_page::TemporaryPage;
+use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress};
+use start::usermode;
 
 use syscall::data::SigAction;
 use syscall::error::*;
-use syscall::flag::{CLONE_VFORK, CLONE_VM, CLONE_SIGHAND, SIG_DFL, SIGCONT, SIGTERM, WCONTINUED,
-                    WNOHANG, WUNTRACED, wifcontinued, wifstopped};
+use syscall::flag::{
+    wifcontinued, wifstopped, CLONE_SIGHAND, CLONE_VFORK, CLONE_VM, SIGCONT, SIGTERM, SIG_DFL,
+    WCONTINUED, WNOHANG, WUNTRACED,
+};
 use syscall::validate::{validate_slice, validate_slice_mut};
 
 pub fn brk(address: usize) -> Result<usize> {
@@ -42,7 +44,9 @@ pub fn brk(address: usize) -> Result<usize> {
     } else if address >= ::USER_HEAP_OFFSET {
         //TODO: out of memory errors
         if let Some(ref heap_shared) = context.heap {
-            heap_shared.with(|heap| { heap.resize(address - ::USER_HEAP_OFFSET, true); });
+            heap_shared.with(|heap| {
+                heap.resize(address - ::USER_HEAP_OFFSET, true);
+            });
         } else {
             panic!("user heap not initialized");
         }
@@ -90,9 +94,10 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
 
             if let Some(ref fx) = context.kfx {
                 let mut new_fx = unsafe {
-                    Box::from_raw(::ALLOCATOR.alloc(
-                        Layout::from_size_align_unchecked(512, 16),
-                    ) as *mut [u8; 512])
+                    Box::from_raw(
+                        ::ALLOCATOR.alloc(Layout::from_size_align_unchecked(512, 16))
+                            as *mut [u8; 512],
+                    )
                 };
                 for (new_b, b) in new_fx.iter_mut().zip(fx.iter()) {
                     *new_b = *b;
@@ -127,13 +132,15 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                             VirtualAddress::new(memory.start_address().get() + ::USER_TMP_OFFSET),
                             memory.size(),
                             EntryFlags::PRESENT | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE,
-                            false
+                            false,
                         );
 
                         unsafe {
-                            intrinsics::copy(memory.start_address().get() as *const u8,
-                                            new_memory.start_address().get() as *mut u8,
-                                            memory.size());
+                            intrinsics::copy(
+                                memory.start_address().get() as *const u8,
+                                new_memory.start_address().get() as *mut u8,
+                                memory.size(),
+                            );
                         }
 
                         new_memory.remap(memory.flags());
@@ -146,8 +153,7 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                         let mut new_heap = context::memory::Memory::new(
                             VirtualAddress::new(::USER_TMP_HEAP_OFFSET),
                             heap.size(),
-                            EntryFlags::PRESENT | EntryFlags::NO_EXECUTE |
-                                EntryFlags::WRITABLE,
+                            EntryFlags::PRESENT | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE,
                             false,
                         );
 
@@ -169,8 +175,7 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                 let mut new_stack = context::memory::Memory::new(
                     VirtualAddress::new(::USER_TMP_STACK_OFFSET),
                     stack.size(),
-                    EntryFlags::PRESENT | EntryFlags::NO_EXECUTE |
-                        EntryFlags::WRITABLE,
+                    EntryFlags::PRESENT | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE,
                     false,
                 );
 
@@ -190,8 +195,7 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                 let mut new_sigstack = context::memory::Memory::new(
                     VirtualAddress::new(::USER_TMP_SIGSTACK_OFFSET),
                     sigstack.size(),
-                    EntryFlags::PRESENT | EntryFlags::NO_EXECUTE |
-                        EntryFlags::WRITABLE,
+                    EntryFlags::PRESENT | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE,
                     false,
                 );
 
@@ -207,9 +211,7 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                 sigstack_option = Some(new_sigstack);
             }
 
-
             grants = Vec::new();
-
 
             // Copy the name
             name = context.name.clone();
@@ -273,9 +275,9 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
 
             // Copy kernel image mapping
             {
-                let frame = active_table.p4()[::KERNEL_PML4].pointed_frame().expect(
-                    "kernel image not mapped",
-                );
+                let frame = active_table.p4()[::KERNEL_PML4]
+                    .pointed_frame()
+                    .expect("kernel image not mapped");
                 let flags = active_table.p4()[::KERNEL_PML4].flags();
                 active_table.with(&mut new_table, &mut temporary_page, |mapper| {
                     mapper.p4_mut()[::KERNEL_PML4].set(frame, flags);
@@ -310,9 +312,9 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
             if flags & CLONE_VM == CLONE_VM {
                 // Copy user image mapping, if found
                 if !image.is_empty() {
-                    let frame = active_table.p4()[::USER_PML4].pointed_frame().expect(
-                        "user image not mapped",
-                    );
+                    let frame = active_table.p4()[::USER_PML4]
+                        .pointed_frame()
+                        .expect("user image not mapped");
                     let flags = active_table.p4()[::USER_PML4].flags();
                     active_table.with(&mut new_table, &mut temporary_page, |mapper| {
                         mapper.p4_mut()[::USER_PML4].set(frame, flags);
@@ -322,9 +324,9 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
 
                 // Copy user heap mapping, if found
                 if let Some(heap_shared) = heap_option {
-                    let frame = active_table.p4()[::USER_HEAP_PML4].pointed_frame().expect(
-                        "user heap not mapped",
-                    );
+                    let frame = active_table.p4()[::USER_HEAP_PML4]
+                        .pointed_frame()
+                        .expect("user heap not mapped");
                     let flags = active_table.p4()[::USER_HEAP_PML4].flags();
                     active_table.with(&mut new_table, &mut temporary_page, |mapper| {
                         mapper.p4_mut()[::USER_HEAP_PML4].set(frame, flags);
@@ -353,15 +355,14 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                     let start_page = Page::containing_address(VirtualAddress::new(start));
                     let end_page = Page::containing_address(VirtualAddress::new(end - 1));
                     for page in Page::range_inclusive(start_page, end_page) {
-                        let frame = active_table.translate_page(page).expect(
-                            "kernel percpu not mapped",
-                        );
+                        let frame = active_table
+                            .translate_page(page)
+                            .expect("kernel percpu not mapped");
                         active_table.with(&mut new_table, &mut temporary_page, |mapper| {
                             let result = mapper.map_to(
                                 page,
                                 frame,
-                                EntryFlags::PRESENT | EntryFlags::NO_EXECUTE |
-                                    EntryFlags::WRITABLE,
+                                EntryFlags::PRESENT | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE,
                             );
                             // Ignore result due to operating on inactive table
                             unsafe {
@@ -375,8 +376,7 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                 for memory_shared in image.iter_mut() {
                     memory_shared.with(|memory| {
                         let start = VirtualAddress::new(
-                            memory.start_address().get() - ::USER_TMP_OFFSET +
-                                ::USER_OFFSET,
+                            memory.start_address().get() - ::USER_TMP_OFFSET + ::USER_OFFSET,
                         );
                         memory.move_to(start, &mut new_table, &mut temporary_page);
                     });
@@ -444,7 +444,6 @@ fn empty(context: &mut context::Context, reaping: bool) {
         drop(context.sigstack.take());
     }
 
-
     let grants = &mut context.grants;
     for grant in grants.drain(..) {
         if reaping {
@@ -475,9 +474,10 @@ fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) 
     {
         let (vfork, ppid) = {
             let contexts = context::contexts();
-            let context_lock = contexts.current().ok_or(Error::new(ESRCH)).expect(
-                "exec_noreturn pid not found",
-            );
+            let context_lock = contexts
+                .current()
+                .ok_or(Error::new(ESRCH))
+                .expect("exec_noreturn pid not found");
             let mut context = context_lock.write();
 
             // Set name
@@ -503,7 +503,8 @@ fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) 
                         unsafe {
                             // Copy file data
                             intrinsics::copy(
-                                (elf.data.as_ptr() as usize + segment.p_offset as usize) as *const u8,
+                                (elf.data.as_ptr() as usize + segment.p_offset as usize)
+                                    as *const u8,
                                 segment.p_vaddr as *mut u8,
                                 segment.p_filesz as usize,
                             );
@@ -537,8 +538,7 @@ fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) 
                 context::memory::Memory::new(
                     VirtualAddress::new(::USER_HEAP_OFFSET),
                     0,
-                    EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE |
-                        EntryFlags::USER_ACCESSIBLE,
+                    EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
                     true,
                 ).to_shared(),
             );
@@ -547,8 +547,7 @@ fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) 
             context.stack = Some(context::memory::Memory::new(
                 VirtualAddress::new(::USER_STACK_OFFSET),
                 ::USER_STACK_SIZE,
-                EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE |
-                    EntryFlags::USER_ACCESSIBLE,
+                EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
                 true,
             ));
 
@@ -556,8 +555,7 @@ fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) 
             context.sigstack = Some(context::memory::Memory::new(
                 VirtualAddress::new(::USER_SIGSTACK_OFFSET),
                 ::USER_SIGSTACK_SIZE,
-                EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE |
-                    EntryFlags::USER_ACCESSIBLE,
+                EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
                 true,
             ));
 
@@ -612,13 +610,13 @@ fn exec_noreturn(canonical: Box<[u8]>, data: Box<[u8]>, args: Box<[Box<[u8]>]>) 
 
             context.actions = Arc::new(Mutex::new(vec![
                 (
-                SigAction {
-                    sa_handler: unsafe { mem::transmute(SIG_DFL) },
-                    sa_mask: [0; 2],
-                    sa_flags: 0,
-                },
-                0
-            );
+                    SigAction {
+                        sa_handler: unsafe { mem::transmute(SIG_DFL) },
+                        sa_mask: [0; 2],
+                        sa_flags: 0,
+                    },
+                    0
+                );
                 128
             ]));
 
@@ -714,9 +712,10 @@ pub fn exit(status: usize) -> ! {
     {
         let context_lock = {
             let contexts = context::contexts();
-            let context_lock = contexts.current().ok_or(Error::new(ESRCH)).expect(
-                "exit failed to find context",
-            );
+            let context_lock = contexts
+                .current()
+                .ok_or(Error::new(ESRCH))
+                .expect("exit failed to find context");
             Arc::clone(&context_lock)
         };
 
@@ -1039,12 +1038,10 @@ pub fn waitpid(pid: ContextId, status_ptr: usize, flags: usize) -> Result<Contex
                 });
                 grim_reaper(pid, status)
             } else if flags & WNOHANG == WNOHANG {
-                if let Some((w_pid, status)) =
-                    waitpid.receive_nonblock(&WaitpidKey {
-                        pid: Some(pid),
-                        pgid: None,
-                    })
-                {
+                if let Some((w_pid, status)) = waitpid.receive_nonblock(&WaitpidKey {
+                    pid: Some(pid),
+                    pgid: None,
+                }) {
                     grim_reaper(w_pid, status)
                 } else {
                     Some(Ok(ContextId::from(0)))

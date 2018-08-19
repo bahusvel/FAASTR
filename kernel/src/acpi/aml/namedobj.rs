@@ -1,17 +1,19 @@
 use alloc::boxed::Box;
-use alloc::string::String;
 use alloc::btree_map::BTreeMap;
+use alloc::string::String;
 
-use super::AmlError;
-use super::parser::{AmlParseType, ParseResult, AmlParseTypeGeneric, AmlExecutionContext,
-                    ExecutionState};
-use super::namespace::{AmlValue, FieldSelector, Method, get_namespace_string, Accessor,
-                       BufferField, FieldUnit, Processor, PowerResource, OperationRegion, Device,
-                       ThermalZone};
-use super::namestring::{parse_name_string, parse_name_seg};
-use super::termlist::{parse_term_arg, parse_object_list};
+use super::namespace::{
+    get_namespace_string, Accessor, AmlValue, BufferField, Device, FieldSelector, FieldUnit,
+    Method, OperationRegion, PowerResource, Processor, ThermalZone,
+};
+use super::namestring::{parse_name_seg, parse_name_string};
+use super::parser::{
+    AmlExecutionContext, AmlParseType, AmlParseTypeGeneric, ExecutionState, ParseResult,
+};
 use super::pkglength::parse_pkg_length;
+use super::termlist::{parse_object_list, parse_term_arg};
 use super::type2opcode::parse_def_buffer;
+use super::AmlError;
 
 #[derive(Debug, Copy, Clone)]
 pub enum RegionSpace {
@@ -173,7 +175,8 @@ fn parse_def_bank_field(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResu
     };
 
     parse_field_list(
-        &data[3 + pkg_length_len + region_name.len + bank_name.len + bank_value.len..2 + pkg_length],
+        &data
+            [3 + pkg_length_len + region_name.len + bank_name.len + bank_value.len..2 + pkg_length],
         ctx,
         selector,
         &mut flags,
@@ -886,25 +889,23 @@ fn parse_access_field(
     };
 
     let access_attrib = match (flags_raw & 0xC0) >> 6 {
-        0 => {
-            match data[2] {
-                0x02 => AccessAttrib::AttribQuick,
-                0x04 => AccessAttrib::AttribSendReceive,
-                0x06 => AccessAttrib::AttribByte,
-                0x08 => AccessAttrib::AttribWord,
-                0x0A => AccessAttrib::AttribBlock,
-                0x0B => AccessAttrib::AttribBytes(data[3]),
-                0x0C => AccessAttrib::AttribProcessCall,
-                0x0D => AccessAttrib::AttribBlockProcessCall,
-                0x0E => AccessAttrib::AttribRawBytes(data[3]),
-                0x0F => AccessAttrib::AttribRawProcessBytes(data[3]),
-                _ => {
-                    return Err(AmlError::AmlParseError(
-                        "AccessField - Invalid access attrib",
-                    ))
-                }
+        0 => match data[2] {
+            0x02 => AccessAttrib::AttribQuick,
+            0x04 => AccessAttrib::AttribSendReceive,
+            0x06 => AccessAttrib::AttribByte,
+            0x08 => AccessAttrib::AttribWord,
+            0x0A => AccessAttrib::AttribBlock,
+            0x0B => AccessAttrib::AttribBytes(data[3]),
+            0x0C => AccessAttrib::AttribProcessCall,
+            0x0D => AccessAttrib::AttribBlockProcessCall,
+            0x0E => AccessAttrib::AttribRawBytes(data[3]),
+            0x0F => AccessAttrib::AttribRawProcessBytes(data[3]),
+            _ => {
+                return Err(AmlError::AmlParseError(
+                    "AccessField - Invalid access attrib",
+                ))
             }
-        }
+        },
         1 => AccessAttrib::AttribBytes(data[2]),
         2 => AccessAttrib::AttribRawBytes(data[2]),
         3 => AccessAttrib::AttribRawProcessBytes(data[2]),
@@ -912,8 +913,7 @@ fn parse_access_field(
             return Err(AmlError::AmlParseError(
                 "AccessField - Invalid access attrib",
             ))
-        }
-        // This should never happen but the compiler bitches if I don't cover this
+        } // This should never happen but the compiler bitches if I don't cover this
     };
 
     Ok(AmlParseTypeGeneric {
@@ -1026,10 +1026,7 @@ fn parse_def_mutex(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
     let sync_level = flags & 0x0F;
 
     let local_scope_string = get_namespace_string(ctx.scope.clone(), name.val)?;
-    ctx.add_to_namespace(
-        local_scope_string,
-        AmlValue::Mutex((sync_level, None)),
-    )?;
+    ctx.add_to_namespace(local_scope_string, AmlValue::Mutex((sync_level, None)))?;
 
     Ok(AmlParseType {
         val: AmlValue::None,
@@ -1061,8 +1058,8 @@ fn parse_def_power_res(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResul
     let local_scope_string = get_namespace_string(ctx.scope.clone(), name.val)?;
 
     let system_level = data[2 + pkg_len_len + name.len];
-    let resource_order: u16 = (data[3 + pkg_len_len + name.len] as u16) +
-        ((data[4 + pkg_len_len + name.len] as u16) << 8);
+    let resource_order: u16 = (data[3 + pkg_len_len + name.len] as u16)
+        + ((data[4 + pkg_len_len + name.len] as u16) << 8);
 
     let mut local_ctx = AmlExecutionContext::new(local_scope_string.clone());
     parse_object_list(
@@ -1108,10 +1105,10 @@ fn parse_def_processor(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResul
     let local_scope_string = get_namespace_string(ctx.scope.clone(), name.val)?;
 
     let proc_id = data[2 + pkg_len_len + name.len];
-    let p_blk_addr: u32 = (data[3 + pkg_len_len + name.len] as u32) +
-        ((data[4 + pkg_len_len + name.len] as u32) << 8) +
-        ((data[5 + pkg_len_len + name.len] as u32) << 16) +
-        ((data[6 + pkg_len_len + name.len] as u32) << 24);
+    let p_blk_addr: u32 = (data[3 + pkg_len_len + name.len] as u32)
+        + ((data[4 + pkg_len_len + name.len] as u32) << 8)
+        + ((data[5 + pkg_len_len + name.len] as u32) << 16)
+        + ((data[6 + pkg_len_len + name.len] as u32) << 24);
     let p_blk_len = data[7 + pkg_len_len + name.len];
 
     let mut local_ctx = AmlExecutionContext::new(local_scope_string.clone());

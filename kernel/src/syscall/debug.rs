@@ -1,5 +1,5 @@
-use core::ops::Range;
 use alloc::{String, Vec};
+use core::ops::Range;
 
 use super::data::TimeSpec;
 use super::number::*;
@@ -61,60 +61,46 @@ impl<'a> ::core::fmt::Debug for ByteStr<'a> {
     }
 }
 
-
 pub fn format_call(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize) -> String {
     match a {
         SYS_BRK => format!("brk({:#X})", b),
-        SYS_CLOCK_GETTIME => {
-            format!(
-                "clock_gettime({}, {:?})",
-                b,
-                validate_slice_mut(c as *mut TimeSpec, 1)
-            )
-        }
+        SYS_CLOCK_GETTIME => format!(
+            "clock_gettime({}, {:?})",
+            b,
+            validate_slice_mut(c as *mut TimeSpec, 1)
+        ),
         SYS_CLONE => format!("clone({})", b),
         //TODO: Cleanup, do not allocate
-        SYS_EXECVE => {
-            format!(
-                "execve({:?}, {:?})",
-                validate_slice(b as *const u8, c).map(ByteStr),
-                validate_slice(d as *const [usize; 2], e).map(|slice| {
-                    slice
-                        .iter()
-                        .map(|a| {
-                            validate_slice(a[0] as *const u8, a[1]).ok().and_then(|s| {
-                                ::core::str::from_utf8(s).ok()
-                            })
-                        })
-                        .collect::<Vec<Option<&str>>>()
-                })
-            )
-        }
+        SYS_EXECVE => format!(
+            "execve({:?}, {:?})",
+            validate_slice(b as *const u8, c).map(ByteStr),
+            validate_slice(d as *const [usize; 2], e).map(|slice| slice
+                .iter()
+                .map(|a| validate_slice(a[0] as *const u8, a[1])
+                    .ok()
+                    .and_then(|s| ::core::str::from_utf8(s).ok())).collect::<Vec<Option<&str>>>())
+        ),
         SYS_EXIT => format!("exit({})", b),
-        SYS_FUTEX => {
-            format!(
-                "futex({:#X} [{:?}], {}, {}, {}, {})",
-                b,
-                validate_slice_mut(b as *mut i32, 1).map(|uaddr| &mut uaddr[0]),
-                c,
-                d,
-                e,
-                f
-            )
-        }
+        SYS_FUTEX => format!(
+            "futex({:#X} [{:?}], {}, {}, {}, {})",
+            b,
+            validate_slice_mut(b as *mut i32, 1).map(|uaddr| &mut uaddr[0]),
+            c,
+            d,
+            e,
+            f
+        ),
         SYS_GETPID => format!("getpid()"),
         SYS_IOPL => format!("iopl({})", b),
         SYS_KILL => format!("kill({}, {})", b, c),
         SYS_SIGRETURN => format!("sigreturn()"),
         SYS_SIGACTION => format!("sigaction({}, {:#X}, {:#X}, {:#X})", b, c, d, e),
-        SYS_NANOSLEEP => {
-            format!(
-                "nanosleep({:?}, ({}, {}))",
-                validate_slice(b as *const TimeSpec, 1),
-                c,
-                d
-            )
-        }
+        SYS_NANOSLEEP => format!(
+            "nanosleep({:?}, ({}, {}))",
+            validate_slice(b as *const TimeSpec, 1),
+            c,
+            d
+        ),
         SYS_PHYSALLOC => format!("physalloc({})", b),
         SYS_PHYSFREE => format!("physfree({:#X}, {})", b, c),
         SYS_PHYSMAP => format!("physmap({:#X}, {}, {:#X})", b, c, d),
@@ -122,17 +108,9 @@ pub fn format_call(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize) -
         SYS_VIRTTOPHYS => format!("virttophys({:#X})", b),
         SYS_WAITPID => format!("waitpid({}, {:#X}, {})", b, c, d),
         SYS_YIELD => format!("yield()"),
-        _ => {
-            format!(
-                "UNKNOWN{} {:#X}({:#X}, {:#X}, {:#X}, {:#X}, {:#X})",
-                a,
-                a,
-                b,
-                c,
-                d,
-                e,
-                f
-            )
-        }
+        _ => format!(
+            "UNKNOWN{} {:#X}({:#X}, {:#X}, {:#X}, {:#X}, {:#X})",
+            a, a, b, c, d, e, f
+        ),
     }
 }

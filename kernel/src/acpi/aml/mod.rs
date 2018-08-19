@@ -10,20 +10,20 @@ use super::sdt::Sdt;
 #[macro_use]
 mod parsermacros;
 
-mod namespace;
-mod termlist;
-mod namespacemodifier;
-mod pkglength;
-mod namestring;
-mod namedobj;
 mod dataobj;
+mod namedobj;
+mod namespace;
+mod namespacemodifier;
+mod namestring;
+mod parser;
+mod pkglength;
+mod termlist;
 mod type1opcode;
 mod type2opcode;
-mod parser;
 
+pub use self::namespace::AmlValue;
 use self::parser::AmlExecutionContext;
 use self::termlist::parse_term_list;
-pub use self::namespace::AmlValue;
 
 #[derive(Debug)]
 pub enum AmlError {

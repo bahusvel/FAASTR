@@ -1,10 +1,10 @@
-use super::AmlError;
-use super::parser::{AmlParseType, ParseResult, AmlExecutionContext, ExecutionState};
-use super::namespace::{AmlValue, get_namespace_string};
-use super::pkglength::parse_pkg_length;
-use super::namestring::parse_name_string;
-use super::termlist::parse_term_list;
 use super::dataobj::parse_data_ref_obj;
+use super::namespace::{get_namespace_string, AmlValue};
+use super::namestring::parse_name_string;
+use super::parser::{AmlExecutionContext, AmlParseType, ExecutionState, ParseResult};
+use super::pkglength::parse_pkg_length;
+use super::termlist::parse_term_list;
+use super::AmlError;
 
 pub fn parse_namespace_modifier(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
     match ctx.state {
@@ -46,10 +46,7 @@ fn parse_alias_op(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
     let local_scope_string = get_namespace_string(ctx.scope.clone(), source_name.val)?;
     let local_alias_string = get_namespace_string(ctx.scope.clone(), alias_name.val)?;
 
-    ctx.add_to_namespace(
-        local_scope_string,
-        AmlValue::Alias(local_alias_string),
-    )?;
+    ctx.add_to_namespace(local_scope_string, AmlValue::Alias(local_alias_string))?;
 
     Ok(AmlParseType {
         val: AmlValue::None,

@@ -11,7 +11,9 @@ pub struct WaitCondition {
 
 impl WaitCondition {
     pub fn new() -> WaitCondition {
-        WaitCondition { contexts: Mutex::new(Vec::new()) }
+        WaitCondition {
+            contexts: Mutex::new(Vec::new()),
+        }
     }
 
     pub fn notify(&self) -> usize {

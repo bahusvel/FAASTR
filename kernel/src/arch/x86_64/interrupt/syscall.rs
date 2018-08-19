@@ -9,14 +9,7 @@ pub unsafe extern "C" fn syscall() {
         asm!("" : "={rbp}"(rbp) : : : "intel", "volatile");
 
         syscall::syscall(
-            stack.rax,
-            stack.rbx,
-            stack.rcx,
-            stack.rdx,
-            stack.rsi,
-            stack.rdi,
-            rbp,
-            stack,
+            stack.rax, stack.rbx, stack.rcx, stack.rdx, stack.rsi, stack.rdi, rbp, stack,
         )
     }
 

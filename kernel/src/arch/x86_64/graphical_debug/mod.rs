@@ -1,9 +1,9 @@
 use spin::Mutex;
 
 use memory::Frame;
-use paging::{ActivePageTable, Page, PhysicalAddress, VirtualAddress};
 use paging::entry::EntryFlags;
 use paging::mapper::MapperFlushAll;
+use paging::{ActivePageTable, Page, PhysicalAddress, VirtualAddress};
 
 pub use self::debug::DebugDisplay;
 use self::display::Display;
@@ -64,8 +64,10 @@ pub fn init(active_table: &mut ActivePageTable) {
                 let frame = Frame::containing_address(PhysicalAddress::new(
                     page.start_address().get() - ::KERNEL_OFFSET,
                 ));
-                let flags = EntryFlags::PRESENT | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE |
-                    EntryFlags::HUGE_PAGE;
+                let flags = EntryFlags::PRESENT
+                    | EntryFlags::NO_EXECUTE
+                    | EntryFlags::WRITABLE
+                    | EntryFlags::HUGE_PAGE;
                 let result = active_table.map_to(page, frame, flags);
                 flush_all.consume(result);
             }

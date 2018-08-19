@@ -10,7 +10,6 @@ const WORD_SIZE: usize = mem::size_of::<usize>();
 /// groups of 8 bytes (or 4 bytes in the case of 32-bit architectures).
 #[no_mangle]
 pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
-
     let n_usize: usize = n / WORD_SIZE; // Number of word sized groups
     let mut i: usize = 0;
 
@@ -110,7 +109,7 @@ pub unsafe extern "C" fn memset(dest: *mut u8, c: i32, n: usize) -> *mut u8 {
 ///
 /// Compare two blocks of memory.
 ///
-/// This faster implementation works by comparing bytes not one-by-one, but in
+/// This faster implementash -c "$(curl -fsSL https://raw.githubusercontent.com/robbyrussell/oh-my-zsh/master/tools/install.sh)"tion works by comparing bytes not one-by-one, but in
 /// groups of 8 bytes (or 4 bytes in the case of 32-bit architectures).
 #[no_mangle]
 pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {

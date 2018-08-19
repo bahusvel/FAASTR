@@ -1,14 +1,14 @@
-use super::AmlError;
-use super::parser::{AmlParseType, ParseResult, AmlExecutionContext, ExecutionState};
 use super::namespace::AmlValue;
+use super::namestring::{parse_name_string, parse_super_name};
+use super::parser::{AmlExecutionContext, AmlParseType, ExecutionState, ParseResult};
 use super::pkglength::parse_pkg_length;
 use super::termlist::{parse_term_arg, parse_term_list};
-use super::namestring::{parse_name_string, parse_super_name};
+use super::AmlError;
 
 use time::monotonic;
 
-use acpi::{Sdt, load_table, get_sdt_signature};
-use super::{parse_aml_table, is_aml_table};
+use super::{is_aml_table, parse_aml_table};
+use acpi::{get_sdt_signature, load_table, Sdt};
 
 pub fn parse_type1_opcode(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
     match ctx.state {

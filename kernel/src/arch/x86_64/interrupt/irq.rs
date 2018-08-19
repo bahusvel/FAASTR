@@ -1,8 +1,8 @@
 use core::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 
 use context;
-use device::{local_apic, pic};
 use device::serial::{COM1, COM2};
+use device::{local_apic, pic};
 use time;
 
 //resets to 0 in context::switch()

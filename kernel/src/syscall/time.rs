@@ -1,8 +1,8 @@
-use time;
 use context;
 use syscall::data::TimeSpec;
 use syscall::error::*;
-use syscall::flag::{CLOCK_REALTIME, CLOCK_MONOTONIC};
+use syscall::flag::{CLOCK_MONOTONIC, CLOCK_REALTIME};
+use time;
 
 pub fn clock_gettime(clock: usize, time: &mut TimeSpec) -> Result<usize> {
     let arch_time = match clock {

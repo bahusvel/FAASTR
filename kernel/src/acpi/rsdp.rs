@@ -1,6 +1,6 @@
 use memory::Frame;
-use paging::{ActivePageTable, Page, PhysicalAddress, VirtualAddress};
 use paging::entry::EntryFlags;
+use paging::{ActivePageTable, Page, PhysicalAddress, VirtualAddress};
 
 /// RSDP
 #[derive(Copy, Clone, Debug)]

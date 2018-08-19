@@ -1,11 +1,11 @@
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
-use super::AmlError;
-use super::parser::{AmlParseType, ParseResult, AmlExecutionContext, ExecutionState};
-use super::namespace::AmlValue;
 use super::dataobj::{parse_arg_obj, parse_local_obj};
+use super::namespace::AmlValue;
+use super::parser::{AmlExecutionContext, AmlParseType, ExecutionState, ParseResult};
 use super::type2opcode::parse_type6_opcode;
+use super::AmlError;
 
 pub fn parse_name_string(data: &[u8], ctx: &mut AmlExecutionContext) -> ParseResult {
     match ctx.state {

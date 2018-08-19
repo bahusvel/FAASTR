@@ -3,8 +3,8 @@ use x86::shared::cpuid::CpuId;
 use x86::shared::msr::*;
 
 use memory::Frame;
-use paging::{ActivePageTable, PhysicalAddress, Page, VirtualAddress};
 use paging::entry::EntryFlags;
+use paging::{ActivePageTable, Page, PhysicalAddress, VirtualAddress};
 
 pub static mut LOCAL_APIC: LocalApic = LocalApic {
     address: 0,
@@ -37,8 +37,7 @@ impl LocalApic {
             let result = active_table.map_to(
                 page,
                 frame,
-                EntryFlags::PRESENT | EntryFlags::WRITABLE |
-                    EntryFlags::NO_EXECUTE,
+                EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
             );
             result.flush(active_table);
         }

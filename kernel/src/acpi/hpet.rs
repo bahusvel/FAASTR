@@ -3,11 +3,11 @@ use core::{mem, ptr};
 use core::intrinsics::{volatile_load, volatile_store};
 
 use memory::Frame;
-use paging::{ActivePageTable, PhysicalAddress, Page, VirtualAddress};
 use paging::entry::EntryFlags;
+use paging::{ActivePageTable, Page, PhysicalAddress, VirtualAddress};
 
 use super::sdt::Sdt;
-use super::{ACPI_TABLE, find_sdt, load_table, get_sdt_signature};
+use super::{find_sdt, get_sdt_signature, load_table, ACPI_TABLE};
 
 #[repr(packed)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -72,8 +72,7 @@ impl GenericAddressStructure {
         let result = active_table.map_to(
             page,
             frame,
-            EntryFlags::PRESENT | EntryFlags::WRITABLE |
-                EntryFlags::NO_EXECUTE,
+            EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
         );
         result.flush(active_table);
     }

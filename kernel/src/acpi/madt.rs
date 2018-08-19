@@ -1,18 +1,18 @@
 use core::mem;
 
 use memory::{allocate_frames, Frame};
-use paging::{ActivePageTable, Page, PhysicalAddress, VirtualAddress};
 use paging::entry::EntryFlags;
+use paging::{ActivePageTable, Page, PhysicalAddress, VirtualAddress};
 
 use super::sdt::Sdt;
-use super::{AP_STARTUP, TRAMPOLINE, find_sdt, load_table, get_sdt_signature};
+use super::{find_sdt, get_sdt_signature, load_table, AP_STARTUP, TRAMPOLINE};
 
 use core::intrinsics::{atomic_load, atomic_store};
 use core::sync::atomic::Ordering;
 
 use device::local_apic::LOCAL_APIC;
 use interrupt;
-use start::{kstart_ap, CPU_COUNT, AP_READY};
+use start::{kstart_ap, AP_READY, CPU_COUNT};
 
 /// The Multiple APIC Descriptor Table
 #[derive(Debug)]
@@ -72,8 +72,8 @@ impl Madt {
                                     let stack_start = allocate_frames(64)
                                         .expect("no more frames in acpi stack_start")
                                         .start_address()
-                                        .get() +
-                                        ::KERNEL_OFFSET;
+                                        .get()
+                                        + ::KERNEL_OFFSET;
                                     let stack_end = stack_start + 64 * 4096;
 
                                     let ap_ready = TRAMPOLINE as *mut u64;
@@ -241,9 +241,9 @@ impl Iterator for MadtIter {
         if self.i + 1 < self.sdt.data_len() {
             let entry_type =
                 unsafe { *(self.sdt.data_address() as *const u8).offset(self.i as isize) };
-            let entry_len = unsafe {
-                *(self.sdt.data_address() as *const u8).offset(self.i as isize + 1)
-            } as usize;
+            let entry_len =
+                unsafe { *(self.sdt.data_address() as *const u8).offset(self.i as isize + 1) }
+                    as usize;
 
             if self.i + entry_len <= self.sdt.data_len() {
                 let item = match entry_type {
@@ -268,8 +268,8 @@ impl Iterator for MadtIter {
                     2 => {
                         if entry_len == mem::size_of::<MadtIntSrcOverride>() + 2 {
                             MadtEntry::IntSrcOverride(unsafe {
-                                &*((self.sdt.data_address() + self.i + 2) as
-                                       *const MadtIntSrcOverride)
+                                &*((self.sdt.data_address() + self.i + 2)
+                                    as *const MadtIntSrcOverride)
                             })
                         } else {
                             MadtEntry::InvalidIntSrcOverride(entry_len)

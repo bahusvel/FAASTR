@@ -35,27 +35,19 @@ pub unsafe fn init(hpet: &mut Hpet) -> bool {
     }
 
     let t0_config_word: u64 = TN_VAL_SET_CNF | TN_TYPE_CNF | TN_INT_ENB_CNF;
-    hpet.base_address.write_u64(
-        T0_CONFIG_CAPABILITY_OFFSET,
-        t0_config_word,
-    );
-    hpet.base_address.write_u64(
-        T0_COMPARATOR_OFFSET,
-        clk_periods_per_kernel_tick,
-    );
+    hpet.base_address
+        .write_u64(T0_CONFIG_CAPABILITY_OFFSET, t0_config_word);
+    hpet.base_address
+        .write_u64(T0_COMPARATOR_OFFSET, clk_periods_per_kernel_tick);
     // set accumulator value
-    hpet.base_address.write_u64(
-        T0_COMPARATOR_OFFSET,
-        clk_periods_per_kernel_tick,
-    );
+    hpet.base_address
+        .write_u64(T0_COMPARATOR_OFFSET, clk_periods_per_kernel_tick);
     // set interval
 
-    let enable_word: u64 = hpet.base_address.read_u64(GENERAL_CONFIG_OFFSET) | LEG_RT_CNF |
-        ENABLE_CNF;
-    hpet.base_address.write_u64(
-        GENERAL_CONFIG_OFFSET,
-        enable_word,
-    );
+    let enable_word: u64 =
+        hpet.base_address.read_u64(GENERAL_CONFIG_OFFSET) | LEG_RT_CNF | ENABLE_CNF;
+    hpet.base_address
+        .write_u64(GENERAL_CONFIG_OFFSET, enable_word);
     // Enable interrupts from the HPET
 
     true

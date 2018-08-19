@@ -3,9 +3,9 @@ use core::ptr::Unique;
 
 use memory::{allocate_frames, deallocate_frames, Frame};
 
-use super::{ActivePageTable, Page, PAGE_SIZE, PhysicalAddress, VirtualAddress};
 use super::entry::EntryFlags;
-use super::table::{self, Table, Level4};
+use super::table::{self, Level4, Table};
+use super::{ActivePageTable, Page, PhysicalAddress, VirtualAddress, PAGE_SIZE};
 
 /// In order to enforce correct paging operations in the kernel, these types
 /// are returned on any mapping operation to get the code involved to specify
@@ -83,7 +83,9 @@ pub struct Mapper {
 impl Mapper {
     /// Create a new page table
     pub unsafe fn new() -> Mapper {
-        Mapper { p4: Unique::new_unchecked(table::P4) }
+        Mapper {
+            p4: Unique::new_unchecked(table::P4),
+        }
     }
 
     pub fn p4(&self) -> &Table<Level4> {
@@ -122,18 +124,19 @@ impl Mapper {
 
     /// Update flags for a page
     pub fn remap(&mut self, page: Page, flags: EntryFlags) -> MapperFlush {
-        let p3 = self.p4_mut().next_table_mut(page.p4_index()).expect(
-            "failed to remap: no p3",
-        );
-        let p2 = p3.next_table_mut(page.p3_index()).expect(
-            "failed to remap: no p2",
-        );
-        let p1 = p2.next_table_mut(page.p2_index()).expect(
-            "failed to remap: no p1",
-        );
-        let frame = p1[page.p1_index()].pointed_frame().expect(
-            "failed to remap: not mapped",
-        );
+        let p3 = self
+            .p4_mut()
+            .next_table_mut(page.p4_index())
+            .expect("failed to remap: no p3");
+        let p2 = p3
+            .next_table_mut(page.p3_index())
+            .expect("failed to remap: no p2");
+        let p1 = p2
+            .next_table_mut(page.p2_index())
+            .expect("failed to remap: no p1");
+        let frame = p1[page.p1_index()]
+            .pointed_frame()
+            .expect("failed to remap: not mapped");
         p1[page.p1_index()].set(frame, flags | EntryFlags::PRESENT);
         MapperFlush::new(page)
     }
@@ -265,8 +268,6 @@ impl Mapper {
     pub fn translate(&self, virtual_address: VirtualAddress) -> Option<PhysicalAddress> {
         let offset = virtual_address.get() % PAGE_SIZE;
         self.translate_page(Page::containing_address(virtual_address))
-            .map(|frame| {
-                PhysicalAddress::new(frame.start_address().get() + offset)
-            })
+            .map(|frame| PhysicalAddress::new(frame.start_address().get() + offset))
     }
 }

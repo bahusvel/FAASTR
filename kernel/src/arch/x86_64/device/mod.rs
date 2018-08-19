@@ -1,13 +1,13 @@
 use paging::ActivePageTable;
 
 pub mod cpu;
+#[cfg(feature = "acpi")]
+pub mod hpet;
 pub mod local_apic;
 pub mod pic;
 pub mod pit;
 pub mod rtc;
 pub mod serial;
-#[cfg(feature = "acpi")]
-pub mod hpet;
 
 pub unsafe fn init(active_table: &mut ActivePageTable) {
     pic::init();

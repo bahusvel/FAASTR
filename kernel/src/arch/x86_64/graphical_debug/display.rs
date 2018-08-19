@@ -1,8 +1,8 @@
 use core::alloc::{GlobalAlloc, Layout};
 use core::{cmp, slice};
 
+use super::primitive::{fast_copy, fast_set32, fast_set64};
 use super::FONT;
-use super::primitive::{fast_set32, fast_set64, fast_copy};
 
 /// A display
 pub struct Display {

@@ -6,7 +6,7 @@ use syscall::io::Pio;
 
 use super::device::serial::COM1;
 #[cfg(feature = "graphical_debug")]
-use super::graphical_debug::{DEBUG_DISPLAY, DebugDisplay};
+use super::graphical_debug::{DebugDisplay, DEBUG_DISPLAY};
 
 pub struct Writer<'a> {
     serial: MutexGuard<'a, SerialPort<Pio<u8>>>,

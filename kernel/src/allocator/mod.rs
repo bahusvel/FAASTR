@@ -1,6 +1,6 @@
-use paging::{ActivePageTable, Page, VirtualAddress};
 use paging::entry::EntryFlags;
 use paging::mapper::MapperFlushAll;
+use paging::{ActivePageTable, Page, VirtualAddress};
 
 #[cfg(not(feature = "slab"))]
 pub use self::linked_list::Allocator;
@@ -22,8 +22,10 @@ unsafe fn map_heap(active_table: &mut ActivePageTable, offset: usize, size: usiz
     for page in Page::range_inclusive(heap_start_page, heap_end_page) {
         let result = active_table.map(
             page,
-            EntryFlags::PRESENT | EntryFlags::GLOBAL | EntryFlags::WRITABLE |
-                EntryFlags::NO_EXECUTE,
+            EntryFlags::PRESENT
+                | EntryFlags::GLOBAL
+                | EntryFlags::WRITABLE
+                | EntryFlags::NO_EXECUTE,
         );
         flush_all.consume(result);
     }
