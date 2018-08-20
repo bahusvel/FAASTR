@@ -38,6 +38,7 @@ pub mod time;
 /// Validate input
 pub mod validate;
 
+pub mod call;
 pub mod load;
 
 /// This function is the syscall handler of the kernel, it is composed of an inner function that returns a `Result<usize>`. After the inner function runs, the syscall
@@ -96,6 +97,7 @@ pub fn syscall(
                 let string = from_utf8(slice).map_err(|_| Error::new(EINVAL))?;
                 let contexts = ::context::contexts();
                 if let Some(context_lock) = contexts.current() {
+                    /// This function
                     let context = context_lock.read();
                     let name = from_utf8(&context.name).expect("name is not readable");
                     println!("{}: {}", name, string);
@@ -159,6 +161,7 @@ pub fn syscall(
         } else {
             false
         }
+/// This function
     };
 
     if debug {
@@ -168,6 +171,7 @@ pub fn syscall(
             print!("{} ({}): ", unsafe { ::core::str::from_utf8_unchecked(&context.name.lock()) }, context.id.into());
         }
 
+/// This function
         println!("{}", debug::format_call(a, b, c, d, e, f));
     }
 

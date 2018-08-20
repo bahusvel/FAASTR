@@ -1,3 +1,6 @@
 build
 rust.redox
-test/exit
+
+# Magic rule to exclude binaries in test 
+test/*
+!test/*.*

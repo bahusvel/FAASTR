@@ -1,3 +1,4 @@
+use alloc::arc::Arc;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::{BTreeMap, Vec};
@@ -12,24 +13,38 @@ use syscall::error::*;
 
 type FunctionPtr = usize;
 
+pub type SharedModule = Arc<Module>;
+
 #[allow(dead_code)]
 pub struct Module {
     name: String,
     func_table: BTreeMap<String, FunctionPtr>,
-    image: Vec<Section>,
+    pub image: Vec<Section>,
     actions: BTreeMap<usize, usize>,
     env: BTreeMap<String, Vec<u8>>,
     bindings: BTreeMap<usize, FunctionPtr>,
 }
 
-#[allow(dead_code)]
-struct Section {
-    start: VirtualAddress,
-    flags: EntryFlags,
-    pages: MappingPages,
+impl Module {
+    pub fn to_shared(self) -> SharedModule {
+        Arc::new(self)
+    }
 }
 
-struct MappingPages(Box<[u8]>);
+#[allow(dead_code)]
+pub struct Section {
+    pub start: VirtualAddress,
+    pub flags: EntryFlags,
+    pub pages: MappingPages,
+}
+
+impl Section {
+    pub fn size(&self) -> usize {
+        self.pages.len()
+    }
+}
+
+pub struct MappingPages(Box<[u8]>);
 
 impl MappingPages {
     unsafe fn new(num: usize) -> Self {
@@ -64,7 +79,7 @@ impl DerefMut for MappingPages {
     }
 }
 
-struct MappingIter<'a> {
+pub struct MappingIter<'a> {
     pages: &'a MappingPages,
     table: ActivePageTable,
     next: isize,
@@ -77,14 +92,14 @@ impl<'a> Iterator for MappingIter<'a> {
         if self.next as usize >= (self.pages.0.len() / 4096) {
             return None;
         }
-        let addr = unsafe {
+        let phys_addr = unsafe {
             self.table
                 .translate(VirtualAddress::new(
                     self.pages.as_ptr().offset(self.next) as usize
                 )).expect("Mapping page is unmapped")
         };
         self.next += 1;
-        Some(Frame::containing_address(addr))
+        Some(Frame::containing_address(phys_addr))
     }
 }
 
@@ -106,6 +121,8 @@ pub fn load(name: &str, data: &[u8]) -> Result<Module> {
                     }
                 }
             }
+
+            println!("Entrypoint {}", elf.entry());
         }
         Err(err) => {
             println!("exec: failed to execute {}: {}", name, err);
@@ -124,21 +141,29 @@ pub fn load(name: &str, data: &[u8]) -> Result<Module> {
             let voff = segment.p_vaddr % 4096;
             let vaddr = segment.p_vaddr - voff;
             let size = segment.p_memsz as usize + voff as usize;
+            let num_pages = ((size + 4095) & (!4095)) / 4096;
+            println!(
+                "Segment voff={}, vaddr={}, size={}, num_pages={}",
+                voff, vaddr, size, num_pages
+            );
 
-            let mut pages = unsafe { MappingPages::new(size / 4096) };
+            let mut pages = unsafe { MappingPages::new(num_pages) };
 
             //Zero out head
             for i in 0..voff {
                 pages[i as usize] = 0;
             }
             //Load in the section
-            pages.copy_from_slice(&elf.data[segment.p_offset as usize..segment.p_filesz as usize]);
+            pages[voff as usize..size].copy_from_slice(
+                &elf.data
+                    [segment.p_offset as usize..(segment.p_offset + segment.p_filesz) as usize],
+            );
             //Zero out tail
             for i in size..pages.len() {
                 pages[i] = 0;
             }
 
-            let mut flags = EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE;
+            let mut flags = EntryFlags::NO_EXECUTE;
 
             if segment.p_flags & program_header::PF_R == program_header::PF_R {
                 flags.insert(EntryFlags::PRESENT);

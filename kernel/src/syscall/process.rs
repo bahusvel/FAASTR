@@ -306,8 +306,6 @@ pub fn clone(flags: usize, stack_base: usize) -> Result<ContextId> {
                 context.kstack = Some(stack);
             }
 
-            // TODO: Clone ksig?
-
             // Setup heap
             if flags & CLONE_VM == CLONE_VM {
                 // Copy user image mapping, if found

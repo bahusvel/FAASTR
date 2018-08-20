@@ -153,14 +153,6 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     println!("Denis was here");
 
     /*
-    loop {
-        unsafe {
-            interrupt::disable();
-            interrupt::halt();
-        }
-    }
-    */
-
     match context::contexts_mut().spawn(userspace_init) {
         Ok(context_lock) => {
             let mut context = context_lock.write();
@@ -170,6 +162,26 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
             panic!("failed to spawn userspace_init: {:?}", err);
         }
     }
+    */
+
+    let module = syscall::load::load(
+        "exit",
+        initfs_get_file(b"/exit").expect("Could not find exit in initfs"),
+    ).expect("Failed to load module")
+    .to_shared();
+
+    println!("Loaded");
+
+    //syscall::call::cast(module, 4162).expect("Failed to call");
+
+    syscall::call::fuse(module, 4162);
+
+    // loop {
+    //     unsafe {
+    //         interrupt::disable();
+    //         interrupt::halt();
+    //     }
+    // }
 
     loop {
         unsafe {
