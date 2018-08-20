@@ -17,6 +17,7 @@ use syscall::error::*;
 use syscall::load::{Section, SharedModule};
 
 pub extern "C" fn userspace_trampoline() {
+    println!("Exited into trampoline");
     unsafe {
         let mut sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
 
@@ -194,24 +195,9 @@ pub fn spawn(module: SharedModule) -> Result<Arc<RwLock<Context>>> {
 }
 
 pub fn fuse(module: SharedModule, func: usize) -> ! {
-    {
-        let mut context_lock = spawn(module).expect("Failed to spawn context");
-        let contexts = context::contexts();
-        contexts
-            .current()
-            .expect("fuse called without context")
-            .write()
-            .block();
-        let mut context = context_lock.write();
-        context.status = context::Status::Running;
-    }
-
-    let mut sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
-
-    // Go to usermode
-    unsafe {
-        usermode(func, sp, 0);
-    }
+    let context_lock = spawn(module).expect("Failed to spawn function");
+    unsafe { context::fuse_switch(context_lock, func) };
+    println!("Exited past usermode");
 }
 
 pub fn cast(module: SharedModule, func: usize) -> Result<Arc<RwLock<Context>>> {

@@ -8,7 +8,7 @@ use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub use self::context::{Context, ContextId, Status, WaitpidKey};
 pub use self::list::ContextList;
-pub use self::switch::switch;
+pub use self::switch::{fuse_switch, switch};
 
 #[path = "arch/x86_64.rs"]
 mod arch;
