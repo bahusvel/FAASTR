@@ -80,6 +80,8 @@ unsafe fn runnable(context: &Context, cpu_id: usize) -> bool {
 pub unsafe fn switch() -> bool {
     use core::ops::DerefMut;
 
+    println!("Switch called");
+
     //set PIT Interrupt counter to 0, giving each process same amount of PIT ticks
     PIT_TICKS.store(0, Ordering::SeqCst);
 
@@ -153,6 +155,8 @@ pub unsafe fn switch() -> bool {
     // Unset global lock before switch, as arch is only usable by the current CPU at this time
     arch::CONTEXT_SWITCH_LOCK.store(false, Ordering::SeqCst);
 
+    println!("Switch gonna switch {:?}", (*to_ptr).id);
+
     if to_ptr as usize == 0 {
         // No target was found, return
 
@@ -177,8 +181,8 @@ pub unsafe fn switch() -> bool {
     }
 }
 
-pub unsafe fn fuse_switch(to_lock: Arc<RwLock<Context>>, func: usize) -> ! {
-    let cpu_id = ::cpu_id();
+pub unsafe fn fuse_switch(to_lock: Arc<RwLock<Context>>, func: usize) -> () {
+    use core::ops::DerefMut;
     //set PIT Interrupt counter to 0, giving each process same amount of PIT ticks
     PIT_TICKS.store(0, Ordering::SeqCst);
 
@@ -187,7 +191,7 @@ pub unsafe fn fuse_switch(to_lock: Arc<RwLock<Context>>, func: usize) -> ! {
         interrupt::pause();
     }
 
-    {
+    let (from_ptr, to_ptr) = {
         let contexts = contexts();
         let context_lock = contexts
             .current()
@@ -201,21 +205,24 @@ pub unsafe fn fuse_switch(to_lock: Arc<RwLock<Context>>, func: usize) -> ! {
         }
         to.status = Status::Running;
 
-        // Switch page table
-        let dst_pt = InactivePageTable::from_address(to.arch.get_page_table());
-        ActivePageTable::new().switch(dst_pt);
-
         // NOTE I'm not so sure about that, switches stack tss.
         if let Some(ref stack) = to.kstack {
             gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
         }
         CONTEXT_ID.store(to.id, Ordering::SeqCst);
-    }
+
+        (
+            from.deref_mut() as *mut Context,
+            to.deref_mut() as *mut Context,
+        )
+    };
 
     // Unset global lock before switch, as arch is only usable by the current CPU at this time
     arch::CONTEXT_SWITCH_LOCK.store(false, Ordering::SeqCst);
 
     let mut sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
 
-    usermode(func, sp, 0)
+    (&mut *from_ptr)
+        .arch
+        .switch_user(&mut (&mut *to_ptr).arch, func, sp, 0);
 }

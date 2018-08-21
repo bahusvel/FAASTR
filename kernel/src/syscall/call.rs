@@ -98,6 +98,41 @@ pub fn spawn(module: SharedModule) -> Result<Arc<RwLock<Context>>> {
             });
         }
 
+        // Also need to copy kernel TLS mappings, this really needs to be in its own PML4, so I can copy it above.
+        for cpu_id in 0..::cpu_count() {
+            extern "C" {
+                // The starting byte of the thread data segment
+                static mut __tdata_start: u8;
+                // The ending byte of the thread BSS segment
+                static mut __tbss_end: u8;
+            }
+
+            let size =
+                unsafe { &__tbss_end as *const _ as usize - &__tdata_start as *const _ as usize };
+
+            let start = ::KERNEL_PERCPU_OFFSET + ::KERNEL_PERCPU_SIZE * cpu_id;
+            let end = start + size;
+
+            let start_page = Page::containing_address(VirtualAddress::new(start));
+            let end_page = Page::containing_address(VirtualAddress::new(end - 1));
+            for page in Page::range_inclusive(start_page, end_page) {
+                let frame = active_table
+                    .translate_page(page)
+                    .expect("kernel percpu not mapped");
+                active_table.with(&mut new_table, &mut temporary_page, |mapper| {
+                    let result = mapper.map_to(
+                        page,
+                        frame,
+                        EntryFlags::PRESENT | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE,
+                    );
+                    // Ignore result due to operating on inactive table
+                    unsafe {
+                        result.ignore();
+                    }
+                });
+            }
+        }
+
         // TODO merge these into one closure.
 
         println!("Fine until here");
@@ -194,10 +229,11 @@ pub fn spawn(module: SharedModule) -> Result<Arc<RwLock<Context>>> {
     Ok(context_lock.clone())
 }
 
-pub fn fuse(module: SharedModule, func: usize) -> ! {
-    let context_lock = spawn(module).expect("Failed to spawn function");
+pub fn fuse(module: SharedModule, func: usize) -> Result<()> {
+    let context_lock = spawn(module)?;
     unsafe { context::fuse_switch(context_lock, func) };
     println!("Exited past usermode");
+    Ok(())
 }
 
 pub fn cast(module: SharedModule, func: usize) -> Result<Arc<RwLock<Context>>> {

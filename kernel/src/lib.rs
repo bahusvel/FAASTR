@@ -174,15 +174,17 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
 
     //syscall::call::cast(module, 4162).expect("Failed to call");
 
-    syscall::call::fuse(module, 4162);
+    syscall::call::fuse(module.clone(), 4162).expect("Failed to call");
+    println!("Exited to caller");
+    syscall::call::fuse(module, 4162).expect("Failed to call");
     println!("Exited to caller");
 
-    // loop {
-    //     unsafe {
-    //         interrupt::disable();
-    //         interrupt::halt();
-    //     }
-    // }
+    loop {
+        unsafe {
+            interrupt::disable();
+            interrupt::halt();
+        }
+    }
 
     loop {
         unsafe {
