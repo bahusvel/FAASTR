@@ -126,18 +126,6 @@ pub fn cpu_count() -> usize {
 
 include!(concat!(env!("OUT_DIR"), "/gen.rs"));
 
-/// Initialize userspace by running the initfs:bin/init process
-/// This function will also set the CWD to initfs:bin and open debug: as stdio
-pub extern "C" fn userspace_init() {
-    syscall::exec(
-        b"exit",
-        initfs_get_file(b"/exit").expect("Could not find exit in initfs"),
-        &[],
-    ).expect("failed to execute init");
-
-    panic!("init returned");
-}
-
 /// This is the kernel entry point for the primary CPU. The arch crate is responsible for calling this
 pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     CPU_ID.store(0, Ordering::SeqCst);
@@ -246,9 +234,7 @@ pub extern "C" fn ksignal(signal: usize) {
         let contexts = context::contexts();
         if let Some(context_lock) = contexts.current() {
             let context = context_lock.read();
-            println!("NAME {}", unsafe {
-                ::core::str::from_utf8_unchecked(&context.name)
-            });
+            println!("NAME {}", context.name);
         }
     }
     syscall::exit(signal & 0x7F);

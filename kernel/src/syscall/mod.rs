@@ -99,40 +99,16 @@ pub fn syscall(
                 if let Some(context_lock) = contexts.current() {
                     /// This function
                     let context = context_lock.read();
-                    let name = from_utf8(&context.name).expect("name is not readable");
-                    println!("{}: {}", name, string);
+                    println!("{}: {}", context.name, string);
                 }
                 Ok(10)
             }
             SYS_BRK => brk(b),
             SYS_GETPID => getpid().map(ContextId::into),
-            SYS_CLONE => clone(b, bp).map(ContextId::into),
             SYS_EXIT => exit((b & 0xFF) << 8),
             SYS_KILL => kill(ContextId::from(b), c),
             SYS_WAITPID => waitpid(ContextId::from(b), c, d).map(ContextId::into),
-            SYS_EXECVE => {
-                exec(
-                    validate_slice(b as *const u8, c)?,
-                    validate_slice(d as *const u8, e)?,
-                    // FIXME this is wrong
-                    validate_slice(f as *const [usize; 2], e)?,
-                )
-            }
             SYS_IOPL => iopl(b, stack),
-            SYS_SIGACTION => sigaction(
-                b,
-                if c == 0 {
-                    None
-                } else {
-                    Some(validate_slice(c as *const SigAction, 1).map(|act| &act[0])?)
-                },
-                if d == 0 {
-                    None
-                } else {
-                    Some(validate_slice_mut(d as *mut SigAction, 1).map(|oldact| &mut oldact[0])?)
-                },
-                e,
-            ),
             SYS_PHYSALLOC => physalloc(b),
             SYS_PHYSFREE => physfree(b, c),
             SYS_PHYSMAP => physmap(b, c, d),

@@ -17,44 +17,6 @@ unsafe fn update(context: &mut Context, cpu_id: usize) {
         // println!("{}: take {} {}", cpu_id, context.id, ::core::str::from_utf8_unchecked(&context.name.lock()));
     }
 
-    // Restore from signal, must only be done from another context to avoid overwriting the stack!
-    if context.ksig_restore && context.status != Status::Running {
-        let ksig = context
-            .ksig
-            .take()
-            .expect("context::switch: ksig not set with ksig_restore");
-        context.arch = ksig.0;
-
-        if let Some(ref mut kfx) = context.kfx {
-            kfx.clone_from_slice(
-                &ksig
-                    .1
-                    .expect("context::switch: ksig kfx not set with ksig_restore"),
-            );
-        } else {
-            panic!("context::switch: kfx not set with ksig_restore");
-        }
-
-        if let Some(ref mut kstack) = context.kstack {
-            kstack.clone_from_slice(
-                &ksig
-                    .2
-                    .expect("context::switch: ksig kstack not set with ksig_restore"),
-            );
-        } else {
-            panic!("context::switch: kstack not set with ksig_restore");
-        }
-
-        context.ksig_restore = false;
-
-        context.unblock();
-    }
-
-    // Unblock when there are pending signals
-    if context.status == Status::Blocked && !context.pending.is_empty() {
-        context.unblock();
-    }
-
     // Wake from sleep
     if context.status == Status::Blocked && context.wake.is_some() {
         let wake = context.wake.expect("context::switch: wake not set");
@@ -94,7 +56,6 @@ pub unsafe fn switch() -> bool {
 
     let from_ptr;
     let mut to_ptr = 0 as *mut Context;
-    let mut to_sig = None;
     {
         let contexts = contexts();
         {
@@ -115,9 +76,6 @@ pub unsafe fn switch() -> bool {
                 let mut context = context_lock.write();
                 if runnable(&mut context, cpu_id) {
                     to_ptr = context.deref_mut() as *mut Context;
-                    if (&mut *to_ptr).ksig.is_none() {
-                        to_sig = context.pending.pop_front();
-                    }
                     break;
                 }
             }
@@ -129,9 +87,6 @@ pub unsafe fn switch() -> bool {
                     let mut context = context_lock.write();
                     if runnable(&mut context, cpu_id) {
                         to_ptr = context.deref_mut() as *mut Context;
-                        if (&mut *to_ptr).ksig.is_none() {
-                            to_sig = context.pending.pop_front();
-                        }
                         break;
                     }
                 }
@@ -159,29 +114,45 @@ pub unsafe fn switch() -> bool {
 
     if to_ptr as usize == 0 {
         // No target was found, return
-
         false
     } else {
-        if let Some(sig) = to_sig {
-            // Signal was found, run signal handler
-
-            //TODO: Allow nested signals
-            assert!((&mut *to_ptr).ksig.is_none());
-
-            let arch = (&mut *to_ptr).arch.clone();
-            let kfx = (&mut *to_ptr).kfx.clone();
-            let kstack = (&mut *to_ptr).kstack.clone();
-            (&mut *to_ptr).ksig = Some((arch, kfx, kstack));
-            (&mut *to_ptr).arch.signal_stack(signal_handler, sig);
-        }
-
         (&mut *from_ptr).arch.switch_to(&mut (&mut *to_ptr).arch);
-
         true
     }
 }
 
-pub unsafe fn fuse_switch(to_lock: Arc<RwLock<Context>>, func: usize) -> () {
+/// Switch to the next context
+///
+/// # Safety
+///
+/// Do not call this while holding locks!
+pub unsafe fn fuse_return(from: &Context, to: &mut Context) -> () {
+    use core::ops::DerefMut;
+
+    println!("Switch called");
+
+    // Set the global lock to avoid the unsafe operations below from causing issues
+    while arch::CONTEXT_SWITCH_LOCK.compare_and_swap(false, true, Ordering::SeqCst) {
+        interrupt::pause();
+    }
+
+    // Switch process states, TSS stack pointer, and store new context ID
+    // NOTE is this correct assumption?
+    to.status = Status::Running;
+    if let Some(ref stack) = to.kstack {
+        gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
+    }
+    CONTEXT_ID.store(to.id, Ordering::SeqCst);
+
+    // Unset global lock before switch, as arch is only usable by the current CPU at this time
+    arch::CONTEXT_SWITCH_LOCK.store(false, Ordering::SeqCst);
+
+    println!("Switch gonna switch {:?}", to.id);
+
+    from.arch.switch_discarding(&mut to.arch);
+}
+
+pub unsafe fn fuse_switch(to: &mut Context, func: usize) -> () {
     use core::ops::DerefMut;
     //set PIT Interrupt counter to 0, giving each process same amount of PIT ticks
     PIT_TICKS.store(0, Ordering::SeqCst);
@@ -192,29 +163,16 @@ pub unsafe fn fuse_switch(to_lock: Arc<RwLock<Context>>, func: usize) -> () {
     }
 
     let (from_ptr, to_ptr) = {
-        let contexts = contexts();
-        let context_lock = contexts
-            .current()
-            .expect("context::switch: not inside of context");
-        let mut from = context_lock.write();
-        let mut to = to_lock.write();
+        let mut from = to.ret_link.expect("Attempting to fuse without parent");
 
-        // Switch process states
-        if from.status == Status::Running {
-            from.status = Status::Runnable;
-        }
         to.status = Status::Running;
 
         // NOTE I'm not so sure about that, switches stack tss.
         if let Some(ref stack) = to.kstack {
             gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
         }
-        CONTEXT_ID.store(to.id, Ordering::SeqCst);
 
-        (
-            from.deref_mut() as *mut Context,
-            to.deref_mut() as *mut Context,
-        )
+        (from.deref_mut() as *mut Context, to as *mut Context)
     };
 
     // Unset global lock before switch, as arch is only usable by the current CPU at this time

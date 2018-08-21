@@ -1,10 +1,12 @@
 use alloc::arc::Arc;
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::{BTreeMap, Vec, VecDeque};
 use core::cmp::Ordering;
 use core::mem;
 use spin::Mutex;
 
+use super::module::SharedModule;
 use context::arch;
 use context::memory::{Grant, Memory, SharedMemory};
 use device;
@@ -91,18 +93,14 @@ impl Eq for WaitpidKey {}
 pub struct Context {
     /// The ID of this context
     pub id: ContextId,
-    /// The ID of the parent context
-    pub ppid: ContextId,
     /// Status of context
     pub status: Status,
+    /// Link to a blocked, owned context to return to
+    pub ret_link: Option<Arc<RwLock<Context>>>,
     /// CPU ID, if locked
     pub cpu_id: Option<usize>,
-    /// Context is halting parent
-    pub vfork: bool,
     /// Context is being waited on
     pub waitpid: Arc<WaitMap<WaitpidKey, (ContextId, usize)>>,
-    /// Context should handle pending signals
-    pub pending: VecDeque<u8>,
     /// Context should wake up at specified time
     pub wake: Option<(u64, u64)>,
     /// The architecture specific context
@@ -111,62 +109,41 @@ pub struct Context {
     pub kfx: Option<Box<[u8]>>,
     /// Kernel stack
     pub kstack: Option<Box<[u8]>>,
-    /// Kernel signal backup
-    pub ksig: Option<(arch::Context, Option<Box<[u8]>>, Option<Box<[u8]>>)>,
-    /// Restore ksig context on next switch
-    pub ksig_restore: bool,
     /// Executable image
     pub image: Vec<SharedMemory>,
     /// User heap
     pub heap: Option<SharedMemory>,
     /// User stack
     pub stack: Option<Memory>,
-    /// User signal stack
-    pub sigstack: Option<Memory>,
     /// User grants
     pub grants: Vec<Grant>,
     /// The name of the context
-    pub name: Box<[u8]>,
+    pub name: String,
     /// The process environment
     pub env: BTreeMap<Box<[u8]>, Arc<Mutex<Vec<u8>>>>,
-    /// Singal actions
-    pub actions: Arc<Mutex<Vec<(SigAction, usize)>>>,
+    /// Module this function was spawned ALLOCATOR
+    pub module: SharedModule,
 }
 
 impl Context {
-    pub fn new(id: ContextId) -> Context {
+    pub fn new(module: SharedModule) -> Context {
         Context {
-            id: id,
-            ppid: ContextId::from(0),
+            id: ContextId::from(0),
             status: Status::Blocked,
+            ret_link: None,
             cpu_id: None,
-            vfork: false,
             waitpid: Arc::new(WaitMap::new()),
-            pending: VecDeque::new(),
             wake: None,
             arch: arch::Context::new(),
             kfx: None,
             kstack: None,
-            ksig: None,
-            ksig_restore: false,
             image: Vec::new(),
             heap: None,
             stack: None,
-            sigstack: None,
             grants: Vec::new(),
-            name: Vec::new().into_boxed_slice(),
+            name: String::new(),
             env: BTreeMap::new(),
-            actions: Arc::new(Mutex::new(vec![
-                (
-                    SigAction {
-                        sa_handler: unsafe { mem::transmute(SIG_DFL) },
-                        sa_mask: [0; 2],
-                        sa_flags: 0,
-                    },
-                    0
-                );
-                128
-            ])),
+            module: module,
         }
     }
 

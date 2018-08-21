@@ -1,6 +1,7 @@
 //! # Context management
 //!
 //! For resources on contexts, please consult [wikipedia](https://en.wikipedia.org/wiki/Context_switch) and  [osdev](https://wiki.osdev.org/Context_Switching)
+use alloc::arc::Arc;
 use alloc::boxed::Box;
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::Ordering;
@@ -8,7 +9,8 @@ use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub use self::context::{Context, ContextId, Status, WaitpidKey};
 pub use self::list::ContextList;
-pub use self::switch::{fuse_switch, switch};
+pub use self::module::{MappingPages, Module, Section, SharedModule, KERNEL_MODULE};
+pub use self::switch::{fuse_return, fuse_switch, switch};
 
 #[path = "arch/x86_64.rs"]
 mod arch;
@@ -21,6 +23,9 @@ mod list;
 
 /// Context switch function
 mod switch;
+
+/// Module images
+mod module;
 
 /// Memory struct - contains a set of pages for a context
 pub mod memory;
@@ -35,14 +40,14 @@ pub const CONTEXT_MAX_CONTEXTS: usize = (isize::max_value() as usize) - 1;
 static CONTEXTS: Once<RwLock<ContextList>> = Once::new();
 
 #[thread_local]
-static CONTEXT_ID: context::AtomicContextId = context::AtomicContextId::default();
+pub static CONTEXT_ID: context::AtomicContextId = context::AtomicContextId::default();
+
+#[thread_local]
+pub static CURRENT_CONTEXT: Option<Arc<Context>> = None;
 
 pub fn init() {
-    let mut contexts = contexts_mut();
-    let context_lock = contexts
-        .new_context()
-        .expect("could not initialize first context");
-    let mut context = context_lock.write();
+    let context = Context::new(KERNEL_MODULE);
+
     let mut fx = unsafe {
         Box::from_raw(
             ::ALLOCATOR.alloc(Layout::from_size_align_unchecked(512, 16)) as *mut [u8; 512],
@@ -56,7 +61,12 @@ pub fn init() {
     context.kfx = Some(fx);
     context.status = Status::Running;
     context.cpu_id = Some(::cpu_id());
-    CONTEXT_ID.store(context.id, Ordering::SeqCst);
+
+    let inserted = contexts_mut()
+        .insert(context)
+        .expect("could not initialize first context");
+
+    CONTEXT_ID.store(inserted.read().id, Ordering::SeqCst);
 }
 
 /// Initialize contexts, called if needed

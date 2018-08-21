@@ -8,6 +8,7 @@ use paging;
 use spin::RwLock;
 
 use super::context::{Context, ContextId};
+use super::module::KERNEL_MODULE;
 use syscall::error::{Error, Result, EAGAIN};
 
 /// Context list type
@@ -39,8 +40,8 @@ impl ContextList {
         self.map.iter()
     }
 
-    /// Create a new context.
-    pub fn new_context(&mut self) -> Result<&Arc<RwLock<Context>>> {
+    /// Enqueue the context to the global list
+    pub fn insert(&self, context: Context) -> Result<&Arc<RwLock<Context>>> {
         if self.next_id >= super::CONTEXT_MAX_CONTEXTS {
             self.next_id = 1;
         }
@@ -56,9 +57,11 @@ impl ContextList {
         let id = ContextId::from(self.next_id);
         self.next_id += 1;
 
+        context.id = id;
+
         assert!(
             self.map
-                .insert(id, Arc::new(RwLock::new(Context::new(id))))
+                .insert(id, Arc::new(RwLock::new(context)))
                 .is_none()
         );
 
@@ -68,11 +71,10 @@ impl ContextList {
             .expect("Failed to insert new context. ID is out of bounds."))
     }
 
-    /// Spawn a context from a function.
-    pub fn spawn(&mut self, func: extern "C" fn()) -> Result<&Arc<RwLock<Context>>> {
-        let context_lock = self.new_context()?;
+    /// Spawn a context from a kernel function
+    pub fn spawn(&mut self, func: extern "C" fn()) -> Result<Context> {
+        let context = Context::new(KERNEL_MODULE);
         {
-            let mut context = context_lock.write();
             let mut fx = unsafe {
                 Box::from_raw(
                     ::ALLOCATOR.alloc(Layout::from_size_align_unchecked(512, 16)) as *mut [u8; 512],
@@ -96,7 +98,7 @@ impl ContextList {
             context.kfx = Some(fx);
             context.kstack = Some(stack);
         }
-        Ok(context_lock)
+        Ok(context)
     }
 
     pub fn remove(&mut self, id: ContextId) -> Option<Arc<RwLock<Context>>> {

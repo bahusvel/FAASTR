@@ -130,6 +130,28 @@ impl Context {
     #[cold]
     #[inline(never)]
     #[naked]
+    pub unsafe fn switch_discarding(&self, next: &mut Context) {
+        if next.loadable {
+            asm!("fxrstor [$0]" : : "r"(next.fx) : "memory" : "intel", "volatile");
+        } else {
+            asm!("fninit" : : : "memory" : "intel", "volatile");
+        }
+        if next.cr3 != self.cr3 {
+            asm!("mov cr3, $0" : : "r"(next.cr3) : "memory" : "intel", "volatile");
+        }
+        asm!("push $0 ; popfq" : : "r"(next.rflags) : "memory" : "intel", "volatile");
+        asm!("mov rbx, $0" : : "r"(next.rbx) : "memory" : "intel", "volatile");
+        asm!("mov r12, $0" : : "r"(next.r12) : "memory" : "intel", "volatile");
+        asm!("mov r13, $0" : : "r"(next.r13) : "memory" : "intel", "volatile");
+        asm!("mov r14, $0" : : "r"(next.r14) : "memory" : "intel", "volatile");
+        asm!("mov r15, $0" : : "r"(next.r15) : "memory" : "intel", "volatile");
+        asm!("mov rsp, $0" : : "r"(next.rsp) : "memory" : "intel", "volatile");
+        asm!("mov rbp, $0" : : "r"(next.rbp) : "memory" : "intel", "volatile");
+    }
+
+    #[cold]
+    #[inline(never)]
+    #[naked]
     pub unsafe fn switch_user(&mut self, next: &mut Context, ip: usize, sp: usize, arg: usize) {
         asm!("fxsave [$0]" : : "r"(self.fx) : "memory" : "intel", "volatile");
         self.loadable = true;
