@@ -8,7 +8,7 @@ use paging;
 use spin::RwLock;
 
 use super::context::{Context, ContextId, SharedContext};
-use super::load::kernel_module;
+use super::load::KERNEL_MODULE;
 use syscall::error::{Error, Result, EAGAIN};
 
 /// Context list type
@@ -73,7 +73,7 @@ impl ContextList {
 
     /// Spawn a context from a kernel function
     pub fn spawn(&mut self, func: extern "C" fn()) -> Result<Context> {
-        let mut context = Context::new(kernel_module());
+        let mut context = Context::new(KERNEL_MODULE.clone());
         {
             let mut fx = unsafe {
                 Box::from_raw(

@@ -5,28 +5,23 @@ use alloc::{BTreeMap, Vec};
 use core::alloc::{GlobalAlloc, Layout};
 use core::ops::{Deref, DerefMut};
 use core::str;
-use elf::{self, program_header};
+use elf::{self, program_header, Elf};
 use memory::Frame;
 use paging::entry::EntryFlags;
 use paging::{ActivePageTable, VirtualAddress};
-use spin::Once;
+use spin::{Once, RwLock};
 use syscall::error::*;
 
-static KERNEL_MODULE: Once<SharedModule> = Once::new();
-
-/// Get a reference to global kernel module
-pub fn kernel_module() -> SharedModule {
-    KERNEL_MODULE
-        .call_once(|| {
-            Arc::new(Module {
-                name: String::from("kernel"),
-                func_table: BTreeMap::new(),
-                image: Vec::new(),
-                actions: BTreeMap::new(),
-                env: BTreeMap::new(),
-                bindings: BTreeMap::new(),
-            })
-        }).clone()
+lazy_static! {
+    pub static ref KERNEL_MODULE: SharedModule = Arc::new(Module {
+        name: String::from("kernel"),
+        func_table: BTreeMap::new(),
+        image: Vec::new(),
+        actions: BTreeMap::new(),
+        env: BTreeMap::new(),
+        bindings: BTreeMap::new(),
+    });
+    static ref MODULE_CACHE: RwLock<BTreeMap<String, SharedModule>> = RwLock::new(BTreeMap::new());
 }
 
 type FunctionPtr = usize;
@@ -215,4 +210,16 @@ pub fn load(name: &str, data: &[u8]) -> Result<Module> {
         env: BTreeMap::new(),
         bindings: BTreeMap::new(),
     })
+}
+
+pub fn load_and_cache(name: &str, data: &[u8]) -> Result<SharedModule> {
+    let module = load(name, data)?.to_shared();
+    MODULE_CACHE
+        .write()
+        .insert(String::from(name), module.clone());
+    Ok(module)
+}
+
+pub fn cached_module(name: &str) -> Option<SharedModule> {
+    MODULE_CACHE.read().get(name).map(|v| v.clone())
 }

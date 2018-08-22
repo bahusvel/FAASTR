@@ -1,0 +1,11 @@
+{
+    "funcs":{
+        "helloexit":{"offset":4162, "abi":"direct"},
+    },
+    "bindings":{
+
+    },
+    "signals":{
+
+    }
+}

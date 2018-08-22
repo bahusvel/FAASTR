@@ -39,6 +39,9 @@ pub extern crate x86;
 extern crate alloc;
 
 #[macro_use]
+extern crate lazy_static;
+
+#[macro_use]
 extern crate bitflags;
 extern crate goblin;
 extern crate linked_list_allocator;
@@ -152,17 +155,16 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     }
     */
 
-    let module = context::load(
+    let module = context::load_and_cache(
         "exit",
         initfs_get_file(b"/exit").expect("Could not find exit in initfs"),
-    ).expect("Failed to load module")
-    .to_shared();
+    ).expect("Failed to load module");
 
     println!("Loaded");
 
-    context::cast(module.clone(), 4162).expect("Failed to call");
-    context::cast(module.clone(), 4162).expect("Failed to call");
-    context::cast(module, 4162).expect("Failed to call");
+    context::cast(context::cached_module("exit").unwrap(), 4162).expect("Failed to call");
+    context::cast(context::cached_module("exit").unwrap(), 4162).expect("Failed to call");
+    context::cast(context::cached_module("exit").unwrap(), 4162).expect("Failed to call");
 
     /*
     context::fuse(module.clone(), 4162).expect("Failed to call");

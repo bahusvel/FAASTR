@@ -1,7 +1,7 @@
 //! # Context management
 //!
 //! For resources on contexts, please consult [wikipedia](https://en.wikipedia.org/wiki/Context_switch) and  [osdev](https://wiki.osdev.org/Context_Switching)
-use self::load::kernel_module;
+use self::load::KERNEL_MODULE;
 use alloc::arc::Arc;
 use alloc::boxed::Box;
 use core::alloc::{GlobalAlloc, Layout};
@@ -11,7 +11,7 @@ use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 pub use self::call::{cast, fuse};
 pub use self::context::{Context, ContextId, SharedContext, Status, WaitpidKey};
 pub use self::list::ContextList;
-pub use self::load::{load, Module, SharedModule};
+pub use self::load::{cached_module, load_and_cache, Module, SharedModule};
 pub use self::switch::{fuse_return, fuse_switch, switch};
 
 #[path = "arch/x86_64.rs"]
@@ -51,7 +51,7 @@ pub static CONTEXT_ID: context::AtomicContextId = context::AtomicContextId::defa
 pub static CURRENT_CONTEXT: Option<Arc<Context>> = None;
 
 pub fn init() {
-    let mut context = Context::new(kernel_module());
+    let mut context = Context::new(KERNEL_MODULE.clone());
 
     let mut fx = unsafe {
         Box::from_raw(
