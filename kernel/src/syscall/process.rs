@@ -7,14 +7,9 @@ use spin::Mutex;
 
 use context;
 use context::{ContextId, Status, WaitpidKey};
-#[cfg(not(feature = "doc"))]
-use elf::{self, program_header};
 use interrupt;
-use memory::allocate_frames;
-use paging::entry::EntryFlags;
 use paging::temporary_page::TemporaryPage;
-use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress};
-use start::usermode;
+use paging::{InactivePageTable, Page, VirtualAddress};
 
 use syscall::data::SigAction;
 use syscall::error::*;

@@ -1,17 +1,12 @@
-use super::load::Section;
 use super::SharedModule;
 use alloc::arc::Arc;
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 use arch::interrupt;
 use context;
-use context::{Context, ContextId, CONTEXT_ID};
+use context::{Context, SharedContext};
 use core::alloc::{GlobalAlloc, Layout};
-use core::intrinsics;
 use core::mem;
-use core::sync::atomic::Ordering;
 use memory::allocate_frames;
-use paging;
 use paging::entry::EntryFlags;
 use paging::temporary_page::TemporaryPage;
 use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress};
@@ -23,11 +18,8 @@ pub extern "C" fn userspace_trampoline() {
     println!("Exited into trampoline");
     unsafe {
         let sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
-
         // Go to usermode
-        unsafe {
-            usermode(4162, sp, 0);
-        }
+        usermode(4162, sp, 0);
     }
 }
 
@@ -232,7 +224,6 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
 pub fn fuse(module: SharedModule, func: usize) -> Result<()> {
     let inserted = {
         let mut context = spawn(module)?;
-        // disable interrupts to swap current context
         let mut contexts_lock = context::contexts_mut();
         {
             let context_lock = contexts_lock.current().expect("No current context");
@@ -251,7 +242,7 @@ pub fn fuse(module: SharedModule, func: usize) -> Result<()> {
     Ok(())
 }
 
-pub fn cast(module: SharedModule, func: usize) -> Result<Arc<RwLock<Context>>> {
+pub fn cast(module: SharedModule, func: usize) -> Result<SharedContext> {
     let mut context = spawn(module)?;
     context.status = context::Status::Runnable;
 

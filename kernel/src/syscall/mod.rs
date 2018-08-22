@@ -12,7 +12,7 @@ pub use self::process::*;
 pub use self::time::*;
 pub use self::validate::*;
 
-use self::data::{SigAction, TimeSpec};
+use self::data::TimeSpec;
 use self::error::{Error, Result, EINVAL, ENOSYS};
 use self::number::*;
 use alloc::str::from_utf8;
@@ -38,8 +38,7 @@ pub mod time;
 /// Validate input
 pub mod validate;
 
-/// This function is the syscall handler of the kernel, it is composed of an inner function that returns a `Result<usize>`. After the inner function runs, the syscall
-/// function calls [`Error::mux`] on it.
+/// This function is the syscall handler of the kernel, it is composed of an inner function that returns a `Result<usize>`. After the inner function runs, the syscall function calls [`Error::mux`] on it.
 pub fn syscall(
     a: usize,
     b: usize,

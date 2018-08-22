@@ -1,4 +1,4 @@
-use interrupt::{disable, halt, stack_trace};
+use interrupt::stack_trace;
 use syscall::flag::*;
 
 extern "C" {

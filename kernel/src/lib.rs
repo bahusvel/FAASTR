@@ -160,8 +160,11 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
 
     println!("Loaded");
 
-    //syscall::call::cast(module, 4162).expect("Failed to call");
+    context::cast(module.clone(), 4162).expect("Failed to call");
+    context::cast(module.clone(), 4162).expect("Failed to call");
+    context::cast(module, 4162).expect("Failed to call");
 
+    /*
     context::fuse(module.clone(), 4162).expect("Failed to call");
     println!("Exited to caller");
     context::fuse(module, 4162).expect("Failed to call");
@@ -173,6 +176,7 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
             interrupt::halt();
         }
     }
+    */
 
     loop {
         unsafe {

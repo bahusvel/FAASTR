@@ -8,7 +8,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::Ordering;
 use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-pub use self::call::fuse;
+pub use self::call::{cast, fuse};
 pub use self::context::{Context, ContextId, SharedContext, Status, WaitpidKey};
 pub use self::list::ContextList;
 pub use self::load::{load, Module, SharedModule};

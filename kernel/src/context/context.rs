@@ -1,9 +1,8 @@
 use alloc::arc::Arc;
 use alloc::boxed::Box;
 use alloc::string::String;
-use alloc::{BTreeMap, Vec, VecDeque};
+use alloc::{BTreeMap, Vec};
 use core::cmp::Ordering;
-use core::mem;
 use spin::{Mutex, RwLock};
 
 use super::SharedModule;
@@ -11,8 +10,6 @@ use context::arch;
 use context::memory::{Grant, Memory, SharedMemory};
 use device;
 use sync::WaitMap;
-use syscall::data::SigAction;
-use syscall::flag::SIG_DFL;
 
 pub type SharedContext = Arc<RwLock<Context>>;
 

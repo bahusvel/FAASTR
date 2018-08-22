@@ -1,13 +1,8 @@
-use alloc::arc::Arc;
-use context::signal::signal_handler;
 use context::{arch, contexts, Context, SharedContext, Status, CONTEXT_ID};
 use core::sync::atomic::Ordering;
 use gdt;
 use interrupt;
 use interrupt::irq::PIT_TICKS;
-use paging::{ActivePageTable, InactivePageTable};
-use spin::RwLock;
-use start::usermode;
 use time;
 
 unsafe fn update(context: &mut Context, cpu_id: usize) {
@@ -110,12 +105,11 @@ pub unsafe fn switch() -> bool {
     // Unset global lock before switch, as arch is only usable by the current CPU at this time
     arch::CONTEXT_SWITCH_LOCK.store(false, Ordering::SeqCst);
 
-    println!("Switch gonna switch {:?}", (*to_ptr).id);
-
     if to_ptr as usize == 0 {
         // No target was found, return
         false
     } else {
+        println!("Switch gonna switch {:?}", (*to_ptr).id);
         (&mut *from_ptr).arch.switch_to(&mut (&mut *to_ptr).arch);
         true
     }
@@ -211,7 +205,7 @@ pub unsafe fn fuse_switch(to_context: SharedContext, func: usize) -> () {
     // Unset global lock before switch, as arch is only usable by the current CPU at this time
     arch::CONTEXT_SWITCH_LOCK.store(false, Ordering::SeqCst);
 
-    let mut sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
+    let sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
 
     (&mut *from_ptr)
         .arch
