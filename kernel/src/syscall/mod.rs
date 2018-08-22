@@ -38,9 +38,6 @@ pub mod time;
 /// Validate input
 pub mod validate;
 
-pub mod call;
-pub mod load;
-
 /// This function is the syscall handler of the kernel, it is composed of an inner function that returns a `Result<usize>`. After the inner function runs, the syscall
 /// function calls [`Error::mux`] on it.
 pub fn syscall(
@@ -106,8 +103,8 @@ pub fn syscall(
             SYS_BRK => brk(b),
             SYS_GETPID => getpid().map(ContextId::into),
             SYS_EXIT => exit((b & 0xFF) << 8),
-            SYS_KILL => kill(ContextId::from(b), c),
-            SYS_WAITPID => waitpid(ContextId::from(b), c, d).map(ContextId::into),
+            //SYS_KILL => kill(ContextId::from(b), c),
+            //SYS_WAITPID => waitpid(ContextId::from(b), c, d).map(ContextId::into),
             SYS_IOPL => iopl(b, stack),
             SYS_PHYSALLOC => physalloc(b),
             SYS_PHYSFREE => physfree(b, c),

@@ -1,6 +1,6 @@
 use alloc::arc::Arc;
 use context::signal::signal_handler;
-use context::{arch, contexts, Context, Status, CONTEXT_ID};
+use context::{arch, contexts, Context, SharedContext, Status, CONTEXT_ID};
 use core::sync::atomic::Ordering;
 use gdt;
 use interrupt;
@@ -42,7 +42,7 @@ unsafe fn runnable(context: &Context, cpu_id: usize) -> bool {
 pub unsafe fn switch() -> bool {
     use core::ops::DerefMut;
 
-    println!("Switch called");
+    //println!("Switch called");
 
     //set PIT Interrupt counter to 0, giving each process same amount of PIT ticks
     PIT_TICKS.store(0, Ordering::SeqCst);
@@ -126,33 +126,50 @@ pub unsafe fn switch() -> bool {
 /// # Safety
 ///
 /// Do not call this while holding locks!
-pub unsafe fn fuse_return(from: &Context, to: &mut Context) -> () {
-    use core::ops::DerefMut;
+pub unsafe fn fuse_return(from_context: SharedContext, to_context: SharedContext) -> () {
+    use core::ops::{Deref, DerefMut};
 
-    println!("Switch called");
+    //println!("Fuse return called");
 
     // Set the global lock to avoid the unsafe operations below from causing issues
     while arch::CONTEXT_SWITCH_LOCK.compare_and_swap(false, true, Ordering::SeqCst) {
         interrupt::pause();
     }
 
-    // Switch process states, TSS stack pointer, and store new context ID
-    // NOTE is this correct assumption?
-    to.status = Status::Running;
-    if let Some(ref stack) = to.kstack {
-        gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
-    }
-    CONTEXT_ID.store(to.id, Ordering::SeqCst);
+    // NOTE It is neccessary to leak pointers, as when arch::switch_* is called the locks will remain being held.
+    let (from_ptr, to_ptr) = {
+        // Switch process states, TSS stack pointer, and store new context ID
+        // NOTE is this correct assumption?
+        let mut from = from_context
+            .try_write()
+            .expect("You must not hold locks to contexts being switched");
+        from.unblock();
+        let mut to = to_context
+            .try_write()
+            .expect("You must not hold locks to contexts being switched");
+        to.status = Status::Running;
+        if let Some(ref stack) = to.kstack {
+            gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
+        }
+        CONTEXT_ID.store(to.id, Ordering::SeqCst);
+
+        (
+            from.deref() as *const Context,
+            to.deref_mut() as *mut Context,
+        )
+    };
 
     // Unset global lock before switch, as arch is only usable by the current CPU at this time
     arch::CONTEXT_SWITCH_LOCK.store(false, Ordering::SeqCst);
 
-    println!("Switch gonna switch {:?}", to.id);
+    println!("Return to {:?}", (*to_ptr).id);
 
-    from.arch.switch_discarding(&mut to.arch);
+    (&*from_ptr)
+        .arch
+        .switch_discarding(&mut (&mut *to_ptr).arch);
 }
 
-pub unsafe fn fuse_switch(to: &mut Context, func: usize) -> () {
+pub unsafe fn fuse_switch(to_context: SharedContext, func: usize) -> () {
     use core::ops::DerefMut;
     //set PIT Interrupt counter to 0, giving each process same amount of PIT ticks
     PIT_TICKS.store(0, Ordering::SeqCst);
@@ -163,16 +180,32 @@ pub unsafe fn fuse_switch(to: &mut Context, func: usize) -> () {
     }
 
     let (from_ptr, to_ptr) = {
-        let mut from = to.ret_link.expect("Attempting to fuse without parent");
+        let mut to = to_context
+            .try_write()
+            .expect("You must not hold locks to contexts being switched");
 
         to.status = Status::Running;
+
+        CONTEXT_ID.store(to.id, Ordering::SeqCst);
 
         // NOTE I'm not so sure about that, switches stack tss.
         if let Some(ref stack) = to.kstack {
             gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
         }
 
-        (from.deref_mut() as *mut Context, to as *mut Context)
+        let from = {
+            let from_context = to
+                .ret_link
+                .as_mut()
+                .expect("Attempting to fuse without parent");
+            let mut from = from_context
+                .try_write()
+                .expect("You must not hold locks to contexts being switched");
+            from.block();
+            from.deref_mut() as *mut Context
+        };
+
+        (from, to.deref_mut() as *mut Context)
     };
 
     // Unset global lock before switch, as arch is only usable by the current CPU at this time

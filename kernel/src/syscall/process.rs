@@ -97,17 +97,22 @@ fn empty(context: &mut context::Context, reaping: bool) {
 
 pub fn exit(status: usize) -> ! {
     {
-        let contexts_lock = context::contexts_mut();
-        let context_lock = contexts_lock.current().expect("No current context");
+        let current_context = context::contexts_mut()
+            .current()
+            .expect("No current context")
+            .clone();
 
         let (pid, parent) = {
-            let mut context = context_lock.write();
+            let mut context = current_context.write();
             context.status = Status::Exited(status);
             (context.id, context.ret_link.take())
         };
 
         if let Some(parent) = parent {
-            context::fuse_return(&context, &mut parent);
+            unsafe {
+                interrupt::disable();
+                context::fuse_return(current_context.clone(), parent)
+            };
         }
 
         // Stop CPU if kernel exits.
@@ -146,6 +151,7 @@ pub fn getpid() -> Result<ContextId> {
     Ok(context.id)
 }
 
+/*
 pub fn kill(pid: ContextId, sig: usize) -> Result<usize> {
     if sig < 0x7F {
         let mut found = 0;
@@ -210,6 +216,7 @@ pub fn kill(pid: ContextId, sig: usize) -> Result<usize> {
         Err(Error::new(EINVAL))
     }
 }
+*/
 
 pub fn sigreturn() -> Result<usize> {
     {
@@ -249,6 +256,7 @@ fn reap(pid: ContextId) -> Result<ContextId> {
     Ok(pid)
 }
 
+/*
 pub fn waitpid(pid: ContextId, status_ptr: usize, flags: usize) -> Result<ContextId> {
     let (ppid, waitpid) = {
         let contexts = context::contexts();
@@ -364,3 +372,4 @@ pub fn waitpid(pid: ContextId, status_ptr: usize, flags: usize) -> Result<Contex
         }
     }
 }
+*/

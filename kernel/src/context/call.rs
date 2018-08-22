@@ -1,9 +1,11 @@
+use super::load::Section;
+use super::SharedModule;
 use alloc::arc::Arc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use arch::interrupt;
 use context;
-use context::{Context, ContextId, Section, SharedModule, CONTEXT_ID};
+use context::{Context, ContextId, CONTEXT_ID};
 use core::alloc::{GlobalAlloc, Layout};
 use core::intrinsics;
 use core::mem;
@@ -20,7 +22,7 @@ use syscall::error::*;
 pub extern "C" fn userspace_trampoline() {
     println!("Exited into trampoline");
     unsafe {
-        let mut sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
+        let sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
 
         // Go to usermode
         unsafe {
@@ -43,15 +45,14 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
         for b in fx.iter_mut() {
             *b = 0;
         }
-        let offset = stack.len() - mem::size_of::<usize>();
+        offset = stack.len() - mem::size_of::<usize>();
         unsafe {
-            let offset = stack.len() - mem::size_of::<usize>();
             let func_ptr = stack.as_mut_ptr().offset(offset as isize);
             *(func_ptr as *mut usize) = userspace_trampoline as usize;
         }
     }
 
-    let mut context = Context::new(module);
+    let mut context = Context::new(module.clone());
 
     {
         //Initializse some basics
@@ -230,30 +231,28 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
 
 pub fn fuse(module: SharedModule, func: usize) -> Result<()> {
     let inserted = {
-        let context = spawn(module)?;
+        let mut context = spawn(module)?;
         // disable interrupts to swap current context
-        interrupt::disable();
-        let contexts_lock = context::contexts_mut();
-        let context_lock = contexts_lock.current().expect("No current context");
-
+        let mut contexts_lock = context::contexts_mut();
         {
-            let mut from = context_lock.write();
-            from.status = context::Status::Blocked;
+            let context_lock = contexts_lock.current().expect("No current context");
+            context.ret_link = Some(context_lock.clone());
         }
 
-        context.ret_link = Some(context_lock);
-        contexts_lock.insert(context)
-    }?.write();
+        contexts_lock.insert(context)?.clone()
+    };
 
-    CONTEXT_ID.store(inserted.id, Ordering::SeqCst);
+    unsafe {
+        interrupt::disable();
+        context::fuse_switch(inserted.clone(), func)
+    };
 
-    unsafe { context::fuse_switch(&mut inserted, func) };
-    println!("Exited past usermode");
+    // NOTE it may seem counter intuitive but fuse will return here!
     Ok(())
 }
 
 pub fn cast(module: SharedModule, func: usize) -> Result<Arc<RwLock<Context>>> {
-    let context = spawn(module)?;
+    let mut context = spawn(module)?;
     context.status = context::Status::Runnable;
 
     Ok(context::contexts_mut().insert(context)?.clone())

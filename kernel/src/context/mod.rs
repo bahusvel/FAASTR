@@ -1,15 +1,17 @@
 //! # Context management
 //!
 //! For resources on contexts, please consult [wikipedia](https://en.wikipedia.org/wiki/Context_switch) and  [osdev](https://wiki.osdev.org/Context_Switching)
+use self::load::kernel_module;
 use alloc::arc::Arc;
 use alloc::boxed::Box;
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::Ordering;
 use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-pub use self::context::{Context, ContextId, Status, WaitpidKey};
+pub use self::call::fuse;
+pub use self::context::{Context, ContextId, SharedContext, Status, WaitpidKey};
 pub use self::list::ContextList;
-pub use self::module::{MappingPages, Module, Section, SharedModule, KERNEL_MODULE};
+pub use self::load::{load, Module, SharedModule};
 pub use self::switch::{fuse_return, fuse_switch, switch};
 
 #[path = "arch/x86_64.rs"]
@@ -24,8 +26,11 @@ mod list;
 /// Context switch function
 mod switch;
 
-/// Module images
-mod module;
+// Implements context instantiation and cast and fuse methods.
+mod call;
+
+// Implements loading modules.
+mod load;
 
 /// Memory struct - contains a set of pages for a context
 pub mod memory;
@@ -46,7 +51,7 @@ pub static CONTEXT_ID: context::AtomicContextId = context::AtomicContextId::defa
 pub static CURRENT_CONTEXT: Option<Arc<Context>> = None;
 
 pub fn init() {
-    let context = Context::new(KERNEL_MODULE);
+    let mut context = Context::new(kernel_module());
 
     let mut fx = unsafe {
         Box::from_raw(
@@ -64,7 +69,8 @@ pub fn init() {
 
     let inserted = contexts_mut()
         .insert(context)
-        .expect("could not initialize first context");
+        .expect("could not initialize first context")
+        .clone();
 
     CONTEXT_ID.store(inserted.read().id, Ordering::SeqCst);
 }

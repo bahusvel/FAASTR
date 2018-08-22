@@ -152,7 +152,7 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     }
     */
 
-    let module = syscall::load::load(
+    let module = context::load(
         "exit",
         initfs_get_file(b"/exit").expect("Could not find exit in initfs"),
     ).expect("Failed to load module")
@@ -162,9 +162,9 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
 
     //syscall::call::cast(module, 4162).expect("Failed to call");
 
-    syscall::call::fuse(module.clone(), 4162).expect("Failed to call");
+    context::fuse(module.clone(), 4162).expect("Failed to call");
     println!("Exited to caller");
-    syscall::call::fuse(module, 4162).expect("Failed to call");
+    context::fuse(module, 4162).expect("Failed to call");
     println!("Exited to caller");
 
     loop {

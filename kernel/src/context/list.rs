@@ -7,13 +7,13 @@ use core::sync::atomic::Ordering;
 use paging;
 use spin::RwLock;
 
-use super::context::{Context, ContextId};
-use super::module::KERNEL_MODULE;
+use super::context::{Context, ContextId, SharedContext};
+use super::load::kernel_module;
 use syscall::error::{Error, Result, EAGAIN};
 
 /// Context list type
 pub struct ContextList {
-    map: BTreeMap<ContextId, Arc<RwLock<Context>>>,
+    map: BTreeMap<ContextId, SharedContext>,
     next_id: usize,
 }
 
@@ -27,21 +27,21 @@ impl ContextList {
     }
 
     /// Get the nth context.
-    pub fn get(&self, id: ContextId) -> Option<&Arc<RwLock<Context>>> {
+    pub fn get(&self, id: ContextId) -> Option<&SharedContext> {
         self.map.get(&id)
     }
 
     /// Get the current context.
-    pub fn current(&self) -> Option<&Arc<RwLock<Context>>> {
+    pub fn current(&self) -> Option<&SharedContext> {
         self.map.get(&super::CONTEXT_ID.load(Ordering::SeqCst))
     }
 
-    pub fn iter(&self) -> ::alloc::btree_map::Iter<ContextId, Arc<RwLock<Context>>> {
+    pub fn iter(&self) -> ::alloc::btree_map::Iter<ContextId, SharedContext> {
         self.map.iter()
     }
 
     /// Enqueue the context to the global list
-    pub fn insert(&self, context: Context) -> Result<&Arc<RwLock<Context>>> {
+    pub fn insert(&mut self, mut context: Context) -> Result<&SharedContext> {
         if self.next_id >= super::CONTEXT_MAX_CONTEXTS {
             self.next_id = 1;
         }
@@ -73,7 +73,7 @@ impl ContextList {
 
     /// Spawn a context from a kernel function
     pub fn spawn(&mut self, func: extern "C" fn()) -> Result<Context> {
-        let context = Context::new(KERNEL_MODULE);
+        let mut context = Context::new(kernel_module());
         {
             let mut fx = unsafe {
                 Box::from_raw(
@@ -101,7 +101,7 @@ impl ContextList {
         Ok(context)
     }
 
-    pub fn remove(&mut self, id: ContextId) -> Option<Arc<RwLock<Context>>> {
+    pub fn remove(&mut self, id: ContextId) -> Option<SharedContext> {
         self.map.remove(&id)
     }
 }

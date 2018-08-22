@@ -4,15 +4,17 @@ use alloc::string::String;
 use alloc::{BTreeMap, Vec, VecDeque};
 use core::cmp::Ordering;
 use core::mem;
-use spin::Mutex;
+use spin::{Mutex, RwLock};
 
-use super::module::SharedModule;
+use super::SharedModule;
 use context::arch;
 use context::memory::{Grant, Memory, SharedMemory};
 use device;
 use sync::WaitMap;
 use syscall::data::SigAction;
 use syscall::flag::SIG_DFL;
+
+pub type SharedContext = Arc<RwLock<Context>>;
 
 /// Unique identifier for a context (i.e. `pid`).
 use core::sync::atomic::AtomicUsize;
@@ -96,7 +98,7 @@ pub struct Context {
     /// Status of context
     pub status: Status,
     /// Link to a blocked, owned context to return to
-    pub ret_link: Option<Arc<RwLock<Context>>>,
+    pub ret_link: Option<SharedContext>,
     /// CPU ID, if locked
     pub cpu_id: Option<usize>,
     /// Context is being waited on
