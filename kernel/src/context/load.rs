@@ -1,3 +1,4 @@
+use super::memory::Memory;
 use alloc::arc::Arc;
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -6,9 +7,10 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::ops::{Deref, DerefMut};
 use core::str;
 use elf::{self, program_header, Elf};
-use memory::Frame;
+use memory::{allocate_mapped_pages, Frame, VallocPages};
 use paging::entry::EntryFlags;
-use paging::{ActivePageTable, VirtualAddress};
+use paging::mapper::MapperFlushAll;
+use paging::{ActivePageTable, Mapper, VirtualAddress};
 use spin::{Once, RwLock};
 use syscall::error::*;
 
@@ -54,68 +56,34 @@ pub struct Section {
 }
 
 impl Section {
-    pub fn size(&self) -> usize {
-        self.pages.len()
+    pub fn map_to_context(&self, mapper: &mut Mapper) -> Memory {
+        Memory::new(self.start, 0, self.flags, 0)
     }
 }
 
 #[derive(Debug)]
-pub struct MappingPages(Box<[u8]>);
+pub struct MappingPages(VallocPages);
 
 impl MappingPages {
     pub unsafe fn new(num: usize) -> Self {
         MappingPages(
-            Vec::from_raw_parts(
-                ::ALLOCATOR.alloc(Layout::from_size_align_unchecked(num * 4096, 4096)) as *mut u8,
-                num * 4096,
-                num * 4096,
-            ).into_boxed_slice(),
+            allocate_mapped_pages(num, EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+                .expect("Failed to allocate mapped pages"),
         )
-    }
-    pub fn frames(&self) -> MappingIter {
-        MappingIter {
-            pages: self,
-            table: unsafe { ActivePageTable::new() },
-            next: 0,
-        }
     }
 }
 
 impl Deref for MappingPages {
-    type Target = [u8];
+    type Target = VallocPages;
 
-    fn deref(&self) -> &[u8] {
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 impl DerefMut for MappingPages {
-    fn deref_mut(&mut self) -> &mut [u8] {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
-    }
-}
-
-pub struct MappingIter<'a> {
-    pages: &'a MappingPages,
-    table: ActivePageTable,
-    next: isize,
-}
-
-impl<'a> Iterator for MappingIter<'a> {
-    type Item = Frame;
-
-    fn next(&mut self) -> Option<Frame> {
-        if self.next as usize >= (self.pages.0.len() / 4096) {
-            return None;
-        }
-        let phys_addr = unsafe {
-            self.table
-                .translate(VirtualAddress::new(
-                    self.pages.as_ptr().offset(self.next) as usize
-                )).expect("Mapping page is unmapped")
-        };
-        self.next += 1;
-        Some(Frame::containing_address(phys_addr))
     }
 }
 
@@ -164,19 +132,21 @@ pub fn load(name: &str, data: &[u8]) -> Result<Module> {
             );
 
             let mut pages = unsafe { MappingPages::new(num_pages) };
-
-            //Zero out head
-            for i in 0..voff {
-                pages[i as usize] = 0;
-            }
-            //Load in the section
-            pages[voff as usize..size].copy_from_slice(
-                &elf.data
-                    [segment.p_offset as usize..(segment.p_offset + segment.p_filesz) as usize],
-            );
-            //Zero out tail
-            for i in size..pages.len() {
-                pages[i] = 0;
+            {
+                let mut pages_mem = unsafe { pages.to_slice_mut() };
+                //Zero out head
+                for i in 0..voff {
+                    pages_mem[i as usize] = 0;
+                }
+                //Load in the section
+                pages_mem[voff as usize..size].copy_from_slice(
+                    &elf.data
+                        [segment.p_offset as usize..(segment.p_offset + segment.p_filesz) as usize],
+                );
+                //Zero out tail
+                for i in size..pages_mem.len() {
+                    pages_mem[i] = 0;
+                }
             }
 
             let mut flags = EntryFlags::NO_EXECUTE;

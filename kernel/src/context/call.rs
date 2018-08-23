@@ -48,7 +48,6 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
 
     {
         //Initializse some basics
-        //context.status = context::Status::Blocked;
         context.arch.set_fx(fx.as_ptr() as usize);
         context.arch.set_stack(stack.as_ptr() as usize + offset);
         context.kfx = Some(fx);
@@ -68,25 +67,19 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
 
         context.arch.set_page_table(unsafe { new_table.address() });
 
-        // Copy kernel image mapping
+        // Copy kernel image mapping and heap mappings
         {
-            let frame = active_table.p4()[::KERNEL_PML4]
+            let frame_kernel = active_table.p4()[::KERNEL_PML4]
                 .pointed_frame()
                 .expect("kernel image not mapped");
-            let flags = active_table.p4()[::KERNEL_PML4].flags();
-            active_table.with(&mut new_table, &mut temporary_page, |mapper| {
-                mapper.p4_mut()[::KERNEL_PML4].set(frame, flags);
-            });
-        }
-
-        // Copy kernel heap mapping
-        {
-            let frame = active_table.p4()[::KERNEL_HEAP_PML4]
+            let flags_kernel = active_table.p4()[::KERNEL_PML4].flags();
+            let frame_heap = active_table.p4()[::KERNEL_HEAP_PML4]
                 .pointed_frame()
                 .expect("kernel heap not mapped");
-            let flags = active_table.p4()[::KERNEL_HEAP_PML4].flags();
+            let flags_heap = active_table.p4()[::KERNEL_HEAP_PML4].flags();
             active_table.with(&mut new_table, &mut temporary_page, |mapper| {
-                mapper.p4_mut()[::KERNEL_HEAP_PML4].set(frame, flags);
+                mapper.p4_mut()[::KERNEL_PML4].set(frame_kernel, flags_kernel);
+                mapper.p4_mut()[::KERNEL_HEAP_PML4].set(frame_heap, flags_heap);
             });
         }
 

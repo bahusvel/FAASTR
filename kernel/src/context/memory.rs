@@ -5,7 +5,7 @@ use spin::Mutex;
 
 use memory::Frame;
 use paging::entry::EntryFlags;
-use paging::mapper::MapperFlushAll;
+use paging::mapper::{Mapper, MapperFlushAll};
 use paging::temporary_page::TemporaryPage;
 use paging::{ActivePageTable, InactivePageTable, Page, PageIter, PhysicalAddress, VirtualAddress};
 
@@ -156,64 +156,26 @@ impl Drop for Grant {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum SharedMemory {
-    Owned(Arc<Mutex<Memory>>),
-    Borrowed(Weak<Mutex<Memory>>),
-}
-
-impl SharedMemory {
-    pub fn with<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&mut Memory) -> T,
-    {
-        match *self {
-            SharedMemory::Owned(ref memory_lock) => {
-                let mut memory = memory_lock.lock();
-                f(&mut *memory)
-            }
-            SharedMemory::Borrowed(ref memory_weak) => {
-                let memory_lock = memory_weak
-                    .upgrade()
-                    .expect("SharedMemory::Borrowed no longer valid");
-                let mut memory = memory_lock.lock();
-                f(&mut *memory)
-            }
-        }
-    }
-
-    pub fn borrow(&self) -> SharedMemory {
-        match *self {
-            SharedMemory::Owned(ref memory_lock) => {
-                SharedMemory::Borrowed(Arc::downgrade(memory_lock))
-            }
-            SharedMemory::Borrowed(ref memory_lock) => SharedMemory::Borrowed(memory_lock.clone()),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Memory {
     start: VirtualAddress,
     size: usize,
     flags: EntryFlags,
+    mapped: bool,
+    page_table: usize,
 }
 
 impl Memory {
-    pub fn new(start: VirtualAddress, size: usize, flags: EntryFlags, clear: bool) -> Self {
+    pub fn new(start: VirtualAddress, size: usize, flags: EntryFlags, page_table: usize) -> Self {
         let mut memory = Memory {
             start: start,
             size: size,
             flags: flags,
+            mapped: false,
+            page_table: page_table,
         };
 
-        memory.map(clear);
-
         memory
-    }
-
-    pub fn to_shared(self) -> SharedMemory {
-        SharedMemory::Owned(Arc::new(Mutex::new(self)))
     }
 
     pub fn start_address(&self) -> VirtualAddress {
@@ -235,89 +197,76 @@ impl Memory {
         Page::range_inclusive(start_page, end_page)
     }
 
-    fn map(&mut self, clear: bool) {
-        let mut active_table = unsafe { ActivePageTable::new() };
-
+    fn map(&mut self, mapper: &mut Mapper) -> MapperFlushAll {
         let mut flush_all = MapperFlushAll::new();
 
         for page in self.pages() {
-            let result = active_table.map(page, self.flags);
+            let result = mapper.map(page, self.flags);
             flush_all.consume(result);
         }
 
-        flush_all.flush(&mut active_table);
+        self.mapped = true;
 
-        if clear {
-            assert!(self.flags.contains(EntryFlags::WRITABLE));
-            unsafe {
-                intrinsics::write_bytes(self.start_address().get() as *mut u8, 0, self.size);
-            }
-        }
+        flush_all
     }
 
-    fn unmap(&mut self) {
-        let mut active_table = unsafe { ActivePageTable::new() };
-
+    fn unmap(&mut self, mapper: &mut Mapper) -> MapperFlushAll {
         let mut flush_all = MapperFlushAll::new();
 
         for page in self.pages() {
-            let result = active_table.unmap(page);
+            let result = mapper.unmap(page);
             flush_all.consume(result);
         }
 
-        flush_all.flush(&mut active_table);
+        self.mapped = false;
+
+        flush_all
     }
 
     /// A complicated operation to move a piece of memory to a new page table
     /// It also allows for changing the address at the same time
+    /*
     pub fn move_to(
         &mut self,
         new_start: VirtualAddress,
         new_table: &mut InactivePageTable,
         temporary_page: &mut TemporaryPage,
-    ) {
-        let mut active_table = unsafe { ActivePageTable::new() };
-
+    ) -> MapperFlushAll {
         let mut flush_all = MapperFlushAll::new();
 
         for page in self.pages() {
-            let (result, frame) = active_table.unmap_return(page, false);
+            let (result, frame) = old_mapper.unmap_return(page, false);
             flush_all.consume(result);
 
-            active_table.with(new_table, temporary_page, |mapper| {
-                let new_page = Page::containing_address(VirtualAddress::new(
-                    page.start_address().get() - self.start.get() + new_start.get(),
-                ));
-                let result = mapper.map_to(new_page, frame, self.flags);
-                // This is not the active table, so the flush can be ignored
-                unsafe {
-                    result.ignore();
-                }
-            });
+            let new_page = Page::containing_address(VirtualAddress::new(
+                page.start_address().get() - self.start.get() + new_start.get(),
+            ));
+            let result = new_mapper.map_to(new_page, frame, self.flags);
+            flush_all.consume(result);
         }
-
-        flush_all.flush(&mut active_table);
-
         self.start = new_start;
+        flush_all
     }
+    */
 
-    pub fn remap(&mut self, new_flags: EntryFlags) {
-        let mut active_table = unsafe { ActivePageTable::new() };
-
+    pub fn remap(&mut self, new_flags: EntryFlags, mapper: &mut Mapper) -> MapperFlushAll {
         let mut flush_all = MapperFlushAll::new();
 
         for page in self.pages() {
-            let result = active_table.remap(page, new_flags);
+            let result = mapper.remap(page, new_flags);
             flush_all.consume(result);
         }
-
-        flush_all.flush(&mut active_table);
 
         self.flags = new_flags;
+
+        flush_all
     }
 
     pub fn resize(&mut self, new_size: usize, clear: bool) {
         let mut active_table = unsafe { ActivePageTable::new() };
+
+        // Sanity check that ensures that we can only resize the memory if its in the current page table
+        assert_eq!(unsafe { active_table.address() }, self.page_table);
 
         //TODO: Calculate page changes to minimize operations
         if new_size > self.size {
@@ -368,6 +317,8 @@ impl Memory {
 
 impl Drop for Memory {
     fn drop(&mut self) {
-        self.unmap();
+        if self.mapped {
+            panic!("Memory handle dropped while mapped");
+        }
     }
 }

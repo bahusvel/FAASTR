@@ -164,3 +164,11 @@ Why are they there? Is there a problem with using 64bit fs?
 * On Unix's the only way to spawn a new process is by clonning some existing one, and then execing the new thing. What's interesting is that page table not only contains the user's mapping but also the kernel's mappings. So those too need to be cloned. That means when I will want to spawn a new function I too will need to clone stuff. Although I should come up with as light weight way as possible to generate a similar looking page table without copying everything. Especially to avoid TLB flush.
 
 * So code in clone is actually really important, it is the only true code that sets up the brand new context with guts and all. So I will be sure to keep that in.
+
+# Recursive Mapping
+
+Ok I finally understand recursive mapping. Its purpose is simple, we use it to allow access to the page table itself so we can modify it however we want by using just the last P4 table entry. Because upper bits of the address are indexes into the corresponding page table entries, by setting all bits of a specific index to 1 we can loop back to the P4 table entry. That means that the lookup will be one level shorter. So if the CPU continues to resolve this page table, the final real page will be an entry in P1 table. By setting more of these index bits to one (in the relative positions), we can do the same for P2, P3 and even P4 table itself.
+
+Under normal circumstances the last P4 entry is mapped to the current table itself. However we can set this P4 entry to some other page table. That means we cannot modify our current page table, because any attempts to do so would actually modify the other page table we set P4 entry to.
+
+This is useful so we can manipulate another page table.

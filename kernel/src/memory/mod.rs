@@ -1,15 +1,21 @@
 //! # Memory management
 //! Some code was borrowed from [Phil Opp's Blog](http://os.phil-opp.com/allocating-frames.html)
 
-pub use paging::{PhysicalAddress, PAGE_SIZE};
+pub use paging::{Page, PhysicalAddress, PAGE_SIZE};
 
 use self::bump::BumpAllocator;
 use self::recycle::RecycleAllocator;
+use self::valloc::Valloc;
+use core::slice;
+use paging::entry::EntryFlags;
+use paging::mapper::MapperFlushAll;
+use paging::{ActivePageTable, PageIter};
 
 use spin::Mutex;
 
 pub mod bump;
 pub mod recycle;
+mod valloc;
 
 /// The current memory map. It's size is maxed out to 512 entries, due to it being
 /// from 0x500 to 0x5000 (800 is the absolute total)
@@ -69,6 +75,7 @@ impl Iterator for MemoryAreaIter {
 }
 
 static ALLOCATOR: Mutex<Option<RecycleAllocator<BumpAllocator>>> = Mutex::new(None);
+static VALLOC: Mutex<Option<Valloc>> = Mutex::new(None);
 
 /// Init memory module
 /// Must be called once, and only once,
@@ -92,7 +99,8 @@ pub unsafe fn init(kernel_start: usize, kernel_end: usize) {
 /// Must be called once, and only once,
 pub unsafe fn init_noncore() {
     if let Some(ref mut allocator) = *ALLOCATOR.lock() {
-        allocator.set_noncore(true)
+        allocator.set_noncore(true);
+        *VALLOC.lock() = Some(Valloc::new(::KERNEL_VALLOC_OFFSET, ::KERNEL_VALLOC_SIZE));
     } else {
         panic!("frame allocator not initialized");
     }
@@ -132,6 +140,70 @@ pub fn deallocate_frames(frame: Frame, count: usize) {
     } else {
         panic!("frame allocator not initialized");
     }
+}
+
+#[derive(Debug)]
+pub struct VallocPages {
+    start: Page,
+    end: Page,
+}
+
+impl VallocPages {
+    pub fn iter(&self) -> PageIter {
+        Page::range_inclusive(self.start, self.end)
+    }
+
+    pub unsafe fn to_slice(&self) -> &[u8] {
+        let start = self.start.start_address().get();
+        let size = self.end.start_address().get() + PAGE_SIZE - start;
+        slice::from_raw_parts(start as *const u8, size)
+    }
+
+    pub unsafe fn to_slice_mut(&mut self) -> &mut [u8] {
+        let start = self.start.start_address().get();
+        let size = self.end.start_address().get() + PAGE_SIZE - start;
+        slice::from_raw_parts_mut(start as *mut u8, size)
+    }
+}
+
+pub fn allocate_unmapped_pages(count: usize) -> Option<VallocPages> {
+    let (start, end) = VALLOC
+        .lock()
+        .as_mut()
+        .expect("valloc not initialiazed")
+        .allocate_pages(count)?;
+    Some(VallocPages { start, end })
+}
+
+pub fn allocate_mapped_pages(count: usize, flags: EntryFlags) -> Option<VallocPages> {
+    let pages = allocate_unmapped_pages(count)?;
+    let start_frame = allocate_frames(count)?;
+
+    let frames = Frame::range_inclusive(
+        start_frame,
+        Frame::containing_address(PhysicalAddress::new(
+            start_frame.start_address().get() + count * PAGE_SIZE,
+        )),
+    );
+
+    let active_table = unsafe { ActivePageTable::new() };
+    let flush_all = MapperFlushAll::new();
+
+    for (page, frame) in pages.iter().zip(frames) {
+        let result = active_table.map_to(page, frame, flags);
+        flush_all.consume(result);
+    }
+    flush_all.flush(&mut active_table);
+
+    Some(pages)
+}
+
+pub fn deallocate_pages(page: Page, count: usize) {
+    VALLOC
+        .lock()
+        .as_mut()
+        .expect("valloc not initialiazed")
+        .deallocate_pages(page, count);
 }
 
 /// A frame, allocated by the frame allocator.

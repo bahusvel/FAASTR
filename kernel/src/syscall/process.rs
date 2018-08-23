@@ -22,13 +22,13 @@ use syscall::validate::{validate_slice, validate_slice_mut};
 pub fn brk(address: usize) -> Result<usize> {
     let contexts = context::contexts();
     let context_lock = contexts.current().ok_or(Error::new(ESRCH))?;
-    let context = context_lock.read();
+    let mut context = context_lock.write();
 
     //println!("{}: {}: BRK {:X}", unsafe { ::core::str::from_utf8_unchecked(&context.name.lock()) },
     //                             context.id.into(), address);
 
     let current = if let Some(ref heap_shared) = context.heap {
-        heap_shared.with(|heap| heap.start_address().get() + heap.size())
+        heap_shared.start_address().get() + heap_shared.size()
     } else {
         panic!("user heap not initialized");
     };
@@ -38,14 +38,11 @@ pub fn brk(address: usize) -> Result<usize> {
         Ok(current)
     } else if address >= ::USER_HEAP_OFFSET {
         //TODO: out of memory errors
-        if let Some(ref heap_shared) = context.heap {
-            heap_shared.with(|heap| {
-                heap.resize(address - ::USER_HEAP_OFFSET, true);
-            });
-        } else {
-            panic!("user heap not initialized");
-        }
-
+        context
+            .heap
+            .as_mut()
+            .expect("user heap not initialised")
+            .resize(address - ::USER_HEAP_OFFSET, true);
         //println!("Brk resize {:X}", address);
         Ok(address)
     } else {
@@ -57,12 +54,10 @@ pub fn brk(address: usize) -> Result<usize> {
 fn empty(context: &mut context::Context, reaping: bool) {
     if reaping {
         // Memory should already be unmapped
-        assert!(context.image.is_empty());
         assert!(context.heap.is_none());
         assert!(context.stack.is_none());
     } else {
         // Unmap previous image, heap, grants, stack, and tls
-        context.image.clear();
         drop(context.heap.take());
         drop(context.stack.take());
     }
