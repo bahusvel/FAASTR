@@ -15,6 +15,12 @@ macro_rules! println {
     ($fmt:expr, $($arg:tt)*) => (print!(concat!($fmt, "\n"), $($arg)*));
 }
 
+macro_rules! align_up {
+    ($val:expr, $align:expr) => {
+        (($val + ($align - 1)) & (!($align - 1))) / $align
+    };
+}
+
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct ScratchRegisters {
@@ -46,7 +52,7 @@ impl ScratchRegisters {
 macro_rules! scratch_push {
     () => {
         asm!(
-                "push rax
+                                        "push rax
         push rcx
         push rdx
         push rdi
@@ -55,15 +61,15 @@ macro_rules! scratch_push {
         push r9
         push r10
         push r11"
-                : : : : "intel", "volatile"
-            )
+                                        : : : : "intel", "volatile"
+                                    )
     };
 }
 
 macro_rules! scratch_pop {
     () => {
         asm!(
-                "pop r11
+                                        "pop r11
         pop r10
         pop r9
         pop r8
@@ -72,8 +78,8 @@ macro_rules! scratch_pop {
         pop rdx
         pop rcx
         pop rax"
-                : : : : "intel", "volatile"
-            )
+                                        : : : : "intel", "volatile"
+                                    )
     };
 }
 
@@ -102,48 +108,48 @@ impl PreservedRegisters {
 macro_rules! preserved_push {
     () => {
         asm!(
-                "push rbx
+                                        "push rbx
         push rbp
         push r12
         push r13
         push r14
         push r15"
-                : : : : "intel", "volatile"
-            )
+                                        : : : : "intel", "volatile"
+                                    )
     };
 }
 
 macro_rules! preserved_pop {
     () => {
         asm!(
-                "pop r15
+                                        "pop r15
         pop r14
         pop r13
         pop r12
         pop rbp
         pop rbx"
-                : : : : "intel", "volatile"
-            )
+                                        : : : : "intel", "volatile"
+                                    )
     };
 }
 
 macro_rules! fs_push {
     () => {
         asm!(
-                "push fs
+                                        "push fs
         mov rax, 0x18
         mov fs, ax"
-                : : : : "intel", "volatile"
-            )
+                                        : : : : "intel", "volatile"
+                                    )
     };
 }
 
 macro_rules! fs_pop {
     () => {
         asm!(
-                "pop fs"
-                : : : : "intel", "volatile"
-            )
+                                        "pop fs"
+                                        : : : : "intel", "volatile"
+                                    )
     };
 }
 
@@ -166,9 +172,9 @@ impl IretRegisters {
 macro_rules! iret {
     () => {
         asm!(
-                "iretq"
-                : : : : "intel", "volatile"
-            )
+                                        "iretq"
+                                        : : : : "intel", "volatile"
+                                    )
     };
 }
 

@@ -1,13 +1,18 @@
 use alloc::arc::{Arc, Weak};
 use alloc::VecDeque;
-use core::intrinsics;
+use core::ops::{Deref, DerefMut};
+use core::{intrinsics, slice};
 use spin::Mutex;
 
-use memory::Frame;
+use memory::{
+    allocate_frames, allocate_unmapped_pages, deallocate_frames, Frame, FrameIter, VallocPages,
+};
 use paging::entry::EntryFlags;
 use paging::mapper::{Mapper, MapperFlushAll};
 use paging::temporary_page::TemporaryPage;
-use paging::{ActivePageTable, InactivePageTable, Page, PageIter, PhysicalAddress, VirtualAddress};
+use paging::{
+    ActivePageTable, InactivePageTable, Page, PageIter, PhysicalAddress, VirtualAddress, PAGE_SIZE,
+};
 
 #[derive(Debug)]
 pub struct Grant {
@@ -157,72 +162,271 @@ impl Drop for Grant {
 }
 
 #[derive(Debug)]
-pub struct Memory {
-    start: VirtualAddress,
-    size: usize,
+struct VallocMapping {
+    pub pages: VallocPages,
     flags: EntryFlags,
-    mapped: bool,
-    page_table: usize,
+    frames: Arc<Frames>,
 }
 
-impl Memory {
-    pub fn new(start: VirtualAddress, size: usize, flags: EntryFlags, page_table: usize) -> Self {
-        let mut memory = Memory {
-            start: start,
-            size: size,
+impl VallocMapping {
+    pub fn new(flags: EntryFlags, frames: Arc<Frames>) -> Option<Self> {
+        let pages = allocate_unmapped_pages(frames.count)?;
+
+        let mut active_table = unsafe { ActivePageTable::new() };
+        let mut flush_all = MapperFlushAll::new();
+
+        for (page, frame) in pages.iter().zip(frames.iter()) {
+            let result = active_table.map_to(page, frame, flags);
+            flush_all.consume(result);
+        }
+
+        flush_all.flush(&mut active_table);
+
+        Some(VallocMapping {
+            pages,
+            flags,
+            frames,
+        })
+    }
+}
+
+impl Drop for VallocMapping {
+    fn drop(&mut self) {
+        let mut active_table = unsafe { ActivePageTable::new() };
+        let mut flush_all = MapperFlushAll::new();
+
+        for page in self.pages.iter() {
+            let (result, _) = active_table.unmap_return(page, false);
+            flush_all.consume(result);
+        }
+        flush_all.flush(&mut active_table);
+    }
+}
+
+impl Deref for VallocMapping {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        let addr = self.pages.start_address().get() as *const u8;
+        unsafe { slice::from_raw_parts(addr, self.frames.count * PAGE_SIZE) }
+    }
+}
+
+impl DerefMut for VallocMapping {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        if !self.flags.contains(EntryFlags::WRITABLE) {
+            panic!("Attemped to mutable dereference non-writable mapping");
+        }
+        let addr = self.pages.start_address().get() as *mut u8;
+        unsafe { slice::from_raw_parts_mut(addr, self.frames.count * PAGE_SIZE) }
+    }
+}
+
+#[derive(Debug)]
+pub struct Frames {
+    start: Frame,
+    count: usize,
+}
+
+impl Frames {
+    pub fn new(count: usize) -> Option<Self> {
+        Some(Frames {
+            start: allocate_frames(count)?,
+            count: count,
+        })
+    }
+
+    pub fn iter(&self) -> FrameIter {
+        Frame::range_inclusive(
+            self.start.clone(),
+            Frame::containing_address(PhysicalAddress::new(
+                self.start.start_address().get() + self.count * PAGE_SIZE - 1,
+            )),
+        )
+    }
+}
+
+impl Drop for Frames {
+    fn drop(&mut self) {
+        deallocate_frames(self.start.clone(), self.count)
+    }
+}
+
+// TODO downgrade the Arc's to Rc's if safe
+#[derive(Debug)]
+pub struct ContextMemory {
+    valloc_mapping: Option<Arc<VallocMapping>>,
+    context_address: VirtualAddress,
+    context_mapped: bool,
+    frames: Arc<Frames>,
+    flags: EntryFlags,
+}
+
+impl ContextMemory {
+    pub fn new(count: usize, context_address: VirtualAddress, flags: EntryFlags) -> Option<Self> {
+        Some(ContextMemory {
+            valloc_mapping: None,
+            context_address,
+            context_mapped: false,
+            frames: Arc::new(Frames::new(count)?),
             flags: flags,
-            mapped: false,
-            page_table: page_table,
-        };
-
-        memory
+        })
     }
 
-    pub fn start_address(&self) -> VirtualAddress {
-        self.start
+    pub fn map_to_kernel(&mut self, flags: EntryFlags) -> VirtualAddress {
+        if self.valloc_mapping.is_some() {
+            return self.valloc_mapping.as_ref().unwrap().pages.start_address();
+        }
+        let mapping = VallocMapping::new(flags, self.frames.clone()).expect("Failed to valloc");
+        self.valloc_mapping = Some(Arc::new(mapping));
+        self.valloc_mapping.as_ref().unwrap().pages.start_address()
     }
 
-    pub fn size(&self) -> usize {
-        self.size
+    pub fn context_address(&self) -> VirtualAddress {
+        self.context_address
+    }
+
+    pub fn page_count(&self) -> usize {
+        self.frames.count
     }
 
     pub fn flags(&self) -> EntryFlags {
         self.flags
     }
 
-    pub fn pages(&self) -> PageIter {
-        let start_page = Page::containing_address(self.start);
-        let end_page =
-            Page::containing_address(VirtualAddress::new(self.start.get() + self.size - 1));
-        Page::range_inclusive(start_page, end_page)
+    pub fn drop_kernel_mapping(&mut self) {
+        drop(self.valloc_mapping.take())
     }
 
-    fn map(&mut self, mapper: &mut Mapper) -> MapperFlushAll {
+    pub fn as_slice(&self) -> Option<&[u8]> {
+        Some(self.valloc_mapping.as_ref()?)
+    }
+
+    pub fn as_slice_mut(&mut self) -> Option<&mut [u8]> {
+        Some(Arc::get_mut(self.valloc_mapping.as_mut()?)?)
+    }
+
+    pub fn map_context(&mut self, mapper: &mut Mapper) -> MapperFlushAll {
         let mut flush_all = MapperFlushAll::new();
 
-        for page in self.pages() {
-            let result = mapper.map(page, self.flags);
+        if self.context_mapped {
+            return flush_all;
+        }
+
+        let pages = Page::range_inclusive(
+            Page::containing_address(self.context_address),
+            Page::containing_address(VirtualAddress::new(
+                self.context_address.get() + self.frames.count * PAGE_SIZE - 1,
+            )),
+        );
+
+        for (page, frame) in pages.zip(self.frames.iter()) {
+            let result = mapper.map_to(page, frame, self.flags);
             flush_all.consume(result);
         }
 
-        self.mapped = true;
+        self.context_mapped = true;
 
         flush_all
     }
 
-    fn unmap(&mut self, mapper: &mut Mapper) -> MapperFlushAll {
+    pub fn unmap_context(&mut self, mapper: &mut Mapper) -> MapperFlushAll {
         let mut flush_all = MapperFlushAll::new();
 
-        for page in self.pages() {
-            let result = mapper.unmap(page);
+        if !self.context_mapped {
+            return flush_all;
+        }
+
+        let pages = Page::range_inclusive(
+            Page::containing_address(self.context_address),
+            Page::containing_address(VirtualAddress::new(
+                self.context_address.get() + self.frames.count * PAGE_SIZE - 1,
+            )),
+        );
+
+        for page in pages {
+            let (result, _) = mapper.unmap_return(page, false);
             flush_all.consume(result);
         }
 
-        self.mapped = false;
+        self.context_mapped = false;
 
         flush_all
     }
 
+    pub fn remap_context(&mut self, mapper: &mut Mapper) -> MapperFlushAll {
+        let mut flush_all = MapperFlushAll::new();
+
+        if self.context_mapped {
+            return flush_all;
+        }
+
+        let pages = Page::range_inclusive(
+            Page::containing_address(self.context_address),
+            Page::containing_address(VirtualAddress::new(
+                self.context_address.get() + self.frames.count * PAGE_SIZE - 1,
+            )),
+        );
+
+        for page in pages {
+            let result = mapper.remap(page, self.flags);
+            flush_all.consume(result);
+        }
+
+        self.context_mapped = true;
+
+        flush_all
+    }
+
+    pub fn ref_clone(&self, new_address: Option<VirtualAddress>) -> Self {
+        ContextMemory {
+            valloc_mapping: self.valloc_mapping.clone(),
+            context_address: new_address.unwrap_or(self.context_address),
+            context_mapped: false,
+            frames: self.frames.clone(),
+            flags: self.flags,
+        }
+    }
+
+    fn clone_internal(
+        &self,
+        new_address: Option<VirtualAddress>,
+        new_count: Option<usize>,
+    ) -> Option<Self> {
+        let frames = Arc::new(Frames::new(new_count.unwrap_or(self.frames.count))?);
+
+        let mut new_mapping = VallocMapping::new(
+            EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+            frames.clone(),
+        )?;
+
+        Some(ContextMemory {
+            valloc_mapping: Some(Arc::new(new_mapping)),
+            context_address: new_address.unwrap_or(self.context_address),
+            context_mapped: false,
+            flags: self.flags,
+            frames: frames,
+        })
+    }
+
+    pub fn copy_clone(&self, new_address: Option<VirtualAddress>) -> Option<Self> {
+        let old_mapping = self
+            .valloc_mapping
+            .as_ref()
+            .map(|m| m.clone())
+            .unwrap_or(Arc::new(VallocMapping::new(
+                EntryFlags::NO_EXECUTE,
+                self.frames.clone(),
+            )?));
+
+        let mut memory = self.clone_internal(new_address, None)?;
+
+        memory.as_slice_mut()?.copy_from_slice(&old_mapping);
+
+        Some(memory)
+    }
+
+    // TODO implement move procedure for new ContextMemory
     /// A complicated operation to move a piece of memory to a new page table
     /// It also allows for changing the address at the same time
     /*
@@ -249,76 +453,40 @@ impl Memory {
     }
     */
 
-    pub fn remap(&mut self, new_flags: EntryFlags, mapper: &mut Mapper) -> MapperFlushAll {
-        let mut flush_all = MapperFlushAll::new();
-
-        for page in self.pages() {
-            let result = mapper.remap(page, new_flags);
-            flush_all.consume(result);
-        }
-
-        self.flags = new_flags;
-
-        flush_all
-    }
-
-    pub fn resize(&mut self, new_size: usize, clear: bool) {
+    // FIXME very inefficient resize, it will reallocate and copy
+    // This function may only run in active table
+    pub fn resize(mut self, new_count: usize) -> Option<Self> {
         let mut active_table = unsafe { ActivePageTable::new() };
 
-        // Sanity check that ensures that we can only resize the memory if its in the current page table
-        assert_eq!(unsafe { active_table.address() }, self.page_table);
+        let old_mapping = (&self)
+            .valloc_mapping
+            .as_ref()
+            .map(|m| m.clone())
+            .unwrap_or(Arc::new(VallocMapping::new(
+                EntryFlags::NO_EXECUTE,
+                self.frames.clone(),
+            )?));
 
-        //TODO: Calculate page changes to minimize operations
-        if new_size > self.size {
-            let mut flush_all = MapperFlushAll::new();
+        let mut memory = (&self).clone_internal(None, Some(new_count))?;
 
-            let start_page =
-                Page::containing_address(VirtualAddress::new(self.start.get() + self.size));
-            let end_page =
-                Page::containing_address(VirtualAddress::new(self.start.get() + new_size - 1));
-            for page in Page::range_inclusive(start_page, end_page) {
-                if active_table.translate_page(page).is_none() {
-                    let result = active_table.map(page, self.flags);
-                    flush_all.consume(result);
+        {
+            let dst = memory.as_slice_mut()?;
+            let src = &old_mapping;
+            let dst_len = dst.len();
+            if dst.len() > src.len() {
+                dst[..src.len()].copy_from_slice(src);
+                for i in src.len()..dst.len() {
+                    dst[i] = 0;
                 }
+            } else {
+                dst.copy_from_slice(&src[..dst_len]);
             }
-
-            flush_all.flush(&mut active_table);
-
-            if clear {
-                unsafe {
-                    intrinsics::write_bytes(
-                        (self.start.get() + self.size) as *mut u8,
-                        0,
-                        new_size - self.size,
-                    );
-                }
-            }
-        } else if new_size < self.size {
-            let mut flush_all = MapperFlushAll::new();
-
-            let start_page =
-                Page::containing_address(VirtualAddress::new(self.start.get() + new_size));
-            let end_page =
-                Page::containing_address(VirtualAddress::new(self.start.get() + self.size - 1));
-            for page in Page::range_inclusive(start_page, end_page) {
-                if active_table.translate_page(page).is_some() {
-                    let result = active_table.unmap(page);
-                    flush_all.consume(result);
-                }
-            }
-
-            flush_all.flush(&mut active_table);
         }
 
-        self.size = new_size;
-    }
-}
+        let mut flush_all = self.unmap_context(&mut active_table);
+        flush_all.consume_flush_all(memory.map_context(&mut active_table));
+        flush_all.flush(&mut active_table);
 
-impl Drop for Memory {
-    fn drop(&mut self) {
-        if self.mapped {
-            panic!("Memory handle dropped while mapped");
-        }
+        Some(memory)
     }
 }

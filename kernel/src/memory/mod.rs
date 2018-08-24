@@ -1,7 +1,7 @@
 //! # Memory management
 //! Some code was borrowed from [Phil Opp's Blog](http://os.phil-opp.com/allocating-frames.html)
 
-pub use paging::{Page, PhysicalAddress, PAGE_SIZE};
+pub use paging::{Page, PhysicalAddress, VirtualAddress, PAGE_SIZE};
 
 use self::bump::BumpAllocator;
 use self::recycle::RecycleAllocator;
@@ -145,57 +145,49 @@ pub fn deallocate_frames(frame: Frame, count: usize) {
 #[derive(Debug)]
 pub struct VallocPages {
     start: Page,
-    end: Page,
+    count: usize,
+}
+
+impl Drop for VallocPages {
+    fn drop(&mut self) {
+        deallocate_pages(self.start, self.count);
+    }
 }
 
 impl VallocPages {
     pub fn iter(&self) -> PageIter {
-        Page::range_inclusive(self.start, self.end)
+        Page::range_inclusive(
+            self.start,
+            Page::containing_address(VirtualAddress::new(
+                self.start.start_address().get() + self.count * PAGE_SIZE - 1,
+            )),
+        )
+    }
+
+    pub fn start_address(&self) -> VirtualAddress {
+        self.start.start_address()
     }
 
     pub unsafe fn to_slice(&self) -> &[u8] {
         let start = self.start.start_address().get();
-        let size = self.end.start_address().get() + PAGE_SIZE - start;
+        let size = self.count * PAGE_SIZE;
         slice::from_raw_parts(start as *const u8, size)
     }
 
     pub unsafe fn to_slice_mut(&mut self) -> &mut [u8] {
         let start = self.start.start_address().get();
-        let size = self.end.start_address().get() + PAGE_SIZE - start;
+        let size = self.count * PAGE_SIZE;
         slice::from_raw_parts_mut(start as *mut u8, size)
     }
 }
 
 pub fn allocate_unmapped_pages(count: usize) -> Option<VallocPages> {
-    let (start, end) = VALLOC
+    let start = VALLOC
         .lock()
         .as_mut()
         .expect("valloc not initialiazed")
         .allocate_pages(count)?;
-    Some(VallocPages { start, end })
-}
-
-pub fn allocate_mapped_pages(count: usize, flags: EntryFlags) -> Option<VallocPages> {
-    let pages = allocate_unmapped_pages(count)?;
-    let start_frame = allocate_frames(count)?;
-
-    let frames = Frame::range_inclusive(
-        start_frame,
-        Frame::containing_address(PhysicalAddress::new(
-            start_frame.start_address().get() + count * PAGE_SIZE,
-        )),
-    );
-
-    let active_table = unsafe { ActivePageTable::new() };
-    let flush_all = MapperFlushAll::new();
-
-    for (page, frame) in pages.iter().zip(frames) {
-        let result = active_table.map_to(page, frame, flags);
-        flush_all.consume(result);
-    }
-    flush_all.flush(&mut active_table);
-
-    Some(pages)
+    Some(VallocPages { start, count })
 }
 
 pub fn deallocate_pages(page: Page, count: usize) {

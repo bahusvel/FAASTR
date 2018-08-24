@@ -1,5 +1,5 @@
 use alloc::Vec;
-use arch::paging::{Page, PageIter, VirtualAddress};
+use arch::paging::{Page, PageIter, VirtualAddress, PAGE_SIZE};
 
 /// Allocator that doesnt actually allocate memory but rather virtual memory pages
 pub struct Valloc {
@@ -9,7 +9,7 @@ pub struct Valloc {
 impl Valloc {
     pub fn new(start: usize, size: usize) -> Self {
         Valloc {
-            free: vec![(start, size / 4096)],
+            free: vec![(start, size / PAGE_SIZE)],
         }
     }
 
@@ -25,11 +25,11 @@ impl Valloc {
         for i in 0..self.free.len() {
             let changed = {
                 let free = &mut self.free[i];
-                if address + count * 4096 == free.0 {
+                if address + count * PAGE_SIZE == free.0 {
                     free.0 = address;
                     free.1 += count;
                     true
-                } else if free.0 + free.1 * 4096 == address {
+                } else if free.0 + free.1 * PAGE_SIZE == address {
                     free.1 += count;
                     true
                 } else {
@@ -50,7 +50,7 @@ impl Valloc {
         false
     }
 
-    pub fn allocate_pages(&mut self, count: usize) -> Option<(Page, Page)> {
+    pub fn allocate_pages(&mut self, count: usize) -> Option<Page> {
         let mut best_fit = None;
         let mut best_fit_index = 0;
 
@@ -79,19 +79,19 @@ impl Valloc {
             }
             self.free.swap_remove(best_fit_index);
 
-            let start = best_fit.0 + (best_fit.1 - count) * 4096;
-            let end = start + count * 4096;
+            let start = best_fit.0 + (best_fit.1 - count) * PAGE_SIZE;
+            let end = start + count * PAGE_SIZE;
 
-            Some((
-                Page::containing_address(VirtualAddress::new(start)),
-                Page::containing_address(VirtualAddress::new(end)),
-            ))
+            println!("Valloced 0x{:X}", start);
+
+            Some(Page::containing_address(VirtualAddress::new(start)))
         } else {
             None
         }
     }
 
     pub fn deallocate_pages(&mut self, page: Page, count: usize) {
+        println!("Unvalloced 0x{:X}", page.start_address().get());
         let address = page.start_address().get();
         if !self.merge(address, count) {
             self.free.push((address, count));

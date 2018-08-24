@@ -7,7 +7,7 @@ use spin::{Mutex, RwLock};
 
 use super::SharedModule;
 use context::arch;
-use context::memory::{Grant, Memory};
+use context::memory::{ContextMemory, Grant};
 use device;
 use sync::WaitMap;
 
@@ -108,10 +108,12 @@ pub struct Context {
     pub kfx: Option<Box<[u8]>>,
     /// Kernel stack
     pub kstack: Option<Box<[u8]>>,
+    // Copy of executable image mappings
+    pub image: Vec<ContextMemory>,
     /// User heap
-    pub heap: Option<Memory>,
+    pub heap: Option<ContextMemory>,
     /// User stack
-    pub stack: Option<Memory>,
+    pub stack: Option<ContextMemory>,
     /// User grants
     pub grants: Vec<Grant>,
     /// The name of the context
@@ -134,6 +136,7 @@ impl Context {
             arch: arch::Context::new(),
             kfx: None,
             kstack: None,
+            image: Vec::new(),
             heap: None,
             stack: None,
             grants: Vec::new(),

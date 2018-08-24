@@ -1,6 +1,8 @@
+use super::memory::ContextMemory;
 use super::SharedModule;
 use alloc::arc::Arc;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use arch::interrupt;
 use context;
 use context::{Context, SharedContext};
@@ -68,18 +70,30 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
         context.arch.set_page_table(unsafe { new_table.address() });
 
         // Copy kernel image mapping and heap mappings
+
+        let kernel_areas = {
+            let area = |pml4| {
+                (
+                    pml4,
+                    active_table.p4()[pml4]
+                        .pointed_frame()
+                        .expect("kernel image not mapped"),
+                    active_table.p4()[pml4].flags(),
+                )
+            };
+            [
+                area(::KERNEL_PML4),
+                area(::KERNEL_HEAP_PML4),
+                area(::KERNEL_VALLOC_PML4),
+            ]
+        };
+
         {
-            let frame_kernel = active_table.p4()[::KERNEL_PML4]
-                .pointed_frame()
-                .expect("kernel image not mapped");
-            let flags_kernel = active_table.p4()[::KERNEL_PML4].flags();
-            let frame_heap = active_table.p4()[::KERNEL_HEAP_PML4]
-                .pointed_frame()
-                .expect("kernel heap not mapped");
-            let flags_heap = active_table.p4()[::KERNEL_HEAP_PML4].flags();
             active_table.with(&mut new_table, &mut temporary_page, |mapper| {
-                mapper.p4_mut()[::KERNEL_PML4].set(frame_kernel, flags_kernel);
-                mapper.p4_mut()[::KERNEL_HEAP_PML4].set(frame_heap, flags_heap);
+                for (pml4, frame, flags) in &kernel_areas {
+                    // Not operating on current page table so don't need to flush
+                    mapper.p4_mut()[*pml4].set(frame.clone(), *flags);
+                }
             });
         }
 
@@ -118,97 +132,61 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
             }
         }
 
-        // TODO merge these into one closure.
-
         println!("Fine until here");
 
+        // Parts of the image that are readonly
+        let readonly = module
+            .image
+            .iter()
+            .filter(|m| !m.flags().contains(EntryFlags::WRITABLE))
+            .map(|m| m.ref_clone(None));
+
+        // FIXME check if any of these failed to allocate
+        let writable = module
+            .image
+            .iter()
+            .filter(|m| m.flags().contains(EntryFlags::WRITABLE))
+            .map(|m| {
+                let mut mc = m
+                    .copy_clone(None)
+                    .expect("Failed to allocate writable memory during spawn");
+                mc.drop_kernel_mapping();
+                mc
+            });
+
+        let mut image: Vec<ContextMemory> = readonly.chain(writable).collect();
+
+        println!("Image is alright");
+
+        let mut stack = ContextMemory::new(
+            ::USER_STACK_SIZE / 4096,
+            VirtualAddress::new(::USER_STACK_OFFSET),
+            EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
+        ).expect("Failed to allocate stack");
+
+        let mut heap = ContextMemory::new(
+            1,
+            VirtualAddress::new(::USER_HEAP_OFFSET),
+            EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
+        ).expect("Failed to allocate heap");
+
+        println!("Stack and heap also aight");
+
         // Setup user image
-        active_table.with(&mut new_table, &mut temporary_page, |mapper| {
-            // Copy writable image
-            for memory in module.image.iter() {
-                // Map non writable parts of image
-                if memory.flags & EntryFlags::WRITABLE != EntryFlags::WRITABLE {
-                    let mut page_ctr = 0;
-                    for frame in memory.pages.frames() {
-                        let page = Page::containing_address(VirtualAddress::new(
-                            memory.start.get() + (page_ctr * 4096),
-                        ));
-                        // Ignoring result due to operating on inactive table.
-                        unsafe {
-                            mapper
-                                .map_to(page, frame, memory.flags | EntryFlags::USER_ACCESSIBLE)
-                                .ignore()
-                        };
-                        page_ctr += 1;
-                    }
-                    println!(
-                        "Mapped {}-{}",
-                        memory.start.get(),
-                        memory.start.get() + memory.size()
-                    );
-                    continue;
-                }
-                /*
-                // Copy writable parts of image
-                let mut new_memory = context::memory::Memory::new(
-                    VirtualAddress::new(memory.start.get()),
-                    memory.size(),
-                    memory.flags,
-                    false,
-                );
-
-                unsafe {
-                    intrinsics::copy(
-                        memory.pages.as_ptr() as *const u8,
-                        new_memory.start_address().get() as *mut u8,
-                        memory.size(),
-                    );
-                }
-                */
+        active_table.with(&mut new_table, &mut temporary_page, |mapper| unsafe {
+            for memory in image.iter_mut() {
+                memory.map_context(mapper).ignore();
             }
+            stack.map_context(mapper).ignore();
+            heap.map_context(mapper).ignore();
         });
 
-        // Map heap
-        /*
-        active_table.with(&mut new_table, &mut temporary_page, |mapper| {
-            context.heap = Some(
-                context::memory::Memory::new(
-                    VirtualAddress::new(::USER_HEAP_OFFSET),
-                    0,
-                    EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
-                    true,
-                ).to_shared(),
-            );
-        });
-        */
-        // Setup user stack
+        println!("Mapping went well too!");
 
-        active_table.with(&mut new_table, &mut temporary_page, |mapper| {
-            let stack_start = Page::containing_address(VirtualAddress::new(::USER_STACK_OFFSET));
-            let stack_end = Page::containing_address(VirtualAddress::new(
-                ::USER_STACK_OFFSET + ::USER_STACK_SIZE,
-            ));
-            for page in Page::range_inclusive(stack_start, stack_end) {
-                unsafe {
-                    mapper
-                        .map(
-                            page,
-                            EntryFlags::NO_EXECUTE
-                                | EntryFlags::WRITABLE
-                                | EntryFlags::USER_ACCESSIBLE,
-                        ).ignore() // ignore is ok, because not operating on current page table
-                }
-            }
-
-            /*
-            context.stack = Some(context::memory::Memory::new(
-                VirtualAddress::new(::USER_STACK_OFFSET),
-                ::USER_STACK_SIZE,
-                EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
-                true,
-            ));
-            */
-        });
+        // TODO zero out stack and heap
+        context.stack = Some(stack);
+        context.heap = Some(heap);
+        context.image = image;
     }
 
     Ok(context)

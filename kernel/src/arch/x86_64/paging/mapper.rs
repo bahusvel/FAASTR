@@ -55,6 +55,11 @@ impl MapperFlushAll {
         mem::forget(flush);
     }
 
+    pub fn consume_flush_all(&mut self, flush: MapperFlushAll) {
+        self.0 = true;
+        mem::forget(flush);
+    }
+
     /// Flush the active page table
     pub fn flush(self, table: &mut ActivePageTable) {
         if self.0 {

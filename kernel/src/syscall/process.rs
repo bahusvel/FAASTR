@@ -9,7 +9,7 @@ use context;
 use context::{ContextId, Status, WaitpidKey};
 use interrupt;
 use paging::temporary_page::TemporaryPage;
-use paging::{InactivePageTable, Page, VirtualAddress};
+use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress, PAGE_SIZE};
 
 use syscall::data::SigAction;
 use syscall::error::*;
@@ -27,22 +27,20 @@ pub fn brk(address: usize) -> Result<usize> {
     //println!("{}: {}: BRK {:X}", unsafe { ::core::str::from_utf8_unchecked(&context.name.lock()) },
     //                             context.id.into(), address);
 
-    let current = if let Some(ref heap_shared) = context.heap {
-        heap_shared.start_address().get() + heap_shared.size()
-    } else {
-        panic!("user heap not initialized");
-    };
-
     if address == 0 {
-        //println!("Brk query {:X}", current);
+        let heap = context.heap.as_ref().expect("user heap not initialized");
+        let current = heap.context_address().get() + heap.page_count() * PAGE_SIZE;
         Ok(current)
     } else if address >= ::USER_HEAP_OFFSET {
         //TODO: out of memory errors
-        context
-            .heap
-            .as_mut()
-            .expect("user heap not initialised")
-            .resize(address - ::USER_HEAP_OFFSET, true);
+        let new_count = align_up!(address - ::USER_HEAP_OFFSET, PAGE_SIZE) / PAGE_SIZE;
+
+        let heap = context.heap.take().expect("user heap not initialized");
+        if new_count == heap.page_count() {
+            return Ok(address);
+        }
+        let new_heap = heap.resize(new_count).expect("Failed to allocate new heap");
+        context.heap = Some(new_heap);
         //println!("Brk resize {:X}", address);
         Ok(address)
     } else {

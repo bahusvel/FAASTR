@@ -1,4 +1,4 @@
-use super::memory::Memory;
+use super::memory::ContextMemory;
 use alloc::arc::Arc;
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -7,10 +7,10 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::ops::{Deref, DerefMut};
 use core::str;
 use elf::{self, program_header, Elf};
-use memory::{allocate_mapped_pages, Frame, VallocPages};
+use memory::{Frame, VallocPages};
 use paging::entry::EntryFlags;
 use paging::mapper::MapperFlushAll;
-use paging::{ActivePageTable, Mapper, VirtualAddress};
+use paging::{ActivePageTable, VirtualAddress};
 use spin::{Once, RwLock};
 use syscall::error::*;
 
@@ -35,7 +35,7 @@ pub type SharedModule = Arc<Module>;
 pub struct Module {
     name: String,
     func_table: BTreeMap<String, FunctionPtr>,
-    pub image: Vec<Section>,
+    pub image: Vec<ContextMemory>,
     actions: BTreeMap<usize, usize>,
     env: BTreeMap<String, Vec<u8>>,
     bindings: BTreeMap<usize, FunctionPtr>,
@@ -44,46 +44,6 @@ pub struct Module {
 impl Module {
     pub fn to_shared(self) -> SharedModule {
         Arc::new(self)
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-pub struct Section {
-    pub start: VirtualAddress,
-    pub flags: EntryFlags,
-    pub pages: MappingPages,
-}
-
-impl Section {
-    pub fn map_to_context(&self, mapper: &mut Mapper) -> Memory {
-        Memory::new(self.start, 0, self.flags, 0)
-    }
-}
-
-#[derive(Debug)]
-pub struct MappingPages(VallocPages);
-
-impl MappingPages {
-    pub unsafe fn new(num: usize) -> Self {
-        MappingPages(
-            allocate_mapped_pages(num, EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
-                .expect("Failed to allocate mapped pages"),
-        )
-    }
-}
-
-impl Deref for MappingPages {
-    type Target = VallocPages;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for MappingPages {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 
@@ -131,9 +91,27 @@ pub fn load(name: &str, data: &[u8]) -> Result<Module> {
                 voff, vaddr, size, num_pages
             );
 
-            let mut pages = unsafe { MappingPages::new(num_pages) };
+            let mut flags = EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE;
+
+            if segment.p_flags & program_header::PF_R == program_header::PF_R {
+                flags.insert(EntryFlags::PRESENT);
+            }
+
+            // W ^ X. If it is executable, do not allow it to be writable, even if requested
+            if segment.p_flags & program_header::PF_X == program_header::PF_X {
+                flags.remove(EntryFlags::NO_EXECUTE);
+            } else if segment.p_flags & program_header::PF_W == program_header::PF_W {
+                flags.insert(EntryFlags::WRITABLE);
+            }
+
+            let mut section =
+                ContextMemory::new(num_pages, VirtualAddress::new(vaddr as usize), flags)
+                    .expect("Failed to allocte context memory");
+
+            section.map_to_kernel(EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE);
+
             {
-                let mut pages_mem = unsafe { pages.to_slice_mut() };
+                let mut pages_mem = section.as_slice_mut().expect("Failed to deref as memory");
                 //Zero out head
                 for i in 0..voff {
                     pages_mem[i as usize] = 0;
@@ -148,25 +126,6 @@ pub fn load(name: &str, data: &[u8]) -> Result<Module> {
                     pages_mem[i] = 0;
                 }
             }
-
-            let mut flags = EntryFlags::NO_EXECUTE;
-
-            if segment.p_flags & program_header::PF_R == program_header::PF_R {
-                flags.insert(EntryFlags::PRESENT);
-            }
-
-            // W ^ X. If it is executable, do not allow it to be writable, even if requested
-            if segment.p_flags & program_header::PF_X == program_header::PF_X {
-                flags.remove(EntryFlags::NO_EXECUTE);
-            } else if segment.p_flags & program_header::PF_W == program_header::PF_W {
-                flags.insert(EntryFlags::WRITABLE);
-            }
-
-            let mut section = Section {
-                start: VirtualAddress::new(vaddr as usize),
-                pages: pages,
-                flags: flags,
-            };
 
             image.push(section);
         }
