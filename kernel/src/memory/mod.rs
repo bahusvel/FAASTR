@@ -6,7 +6,7 @@ pub use paging::{Page, PhysicalAddress, VirtualAddress, PAGE_SIZE};
 use self::bump::BumpAllocator;
 use self::recycle::RecycleAllocator;
 use self::valloc::Valloc;
-use core::slice;
+use core::{mem, slice};
 use paging::entry::EntryFlags;
 use paging::mapper::MapperFlushAll;
 use paging::{ActivePageTable, PageIter};
@@ -98,12 +98,22 @@ pub unsafe fn init(kernel_start: usize, kernel_end: usize) {
 /// Init memory module after core
 /// Must be called once, and only once,
 pub unsafe fn init_noncore() {
-    if let Some(ref mut allocator) = *ALLOCATOR.lock() {
-        allocator.set_noncore(true);
-        *VALLOC.lock() = Some(Valloc::new(::KERNEL_VALLOC_OFFSET, ::KERNEL_VALLOC_SIZE));
-    } else {
-        panic!("frame allocator not initialized");
-    }
+    let allocator_lock = ALLOCATOR
+        .lock()
+        .as_mut()
+        .expect("frame allocator not initialized")
+        .set_noncore(true);
+    *VALLOC.lock() = Some(Valloc::new(::KERNEL_VALLOC_OFFSET, ::KERNEL_VALLOC_SIZE));
+    let valloc_page = allocate_unmapped_pages(1).expect("Out of virtual addres space");
+    // This will map in the VALLOC_PML4 and keep it mapped forever.
+    let mut active_table = unsafe { ActivePageTable::new() };
+    active_table
+        .map_to(
+            valloc_page.start,
+            Frame::containing_address(PhysicalAddress::new(0)),
+            EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE,
+        ).flush(&mut active_table);
+    mem::forget(valloc_page);
 }
 
 /// Get the number of frames available

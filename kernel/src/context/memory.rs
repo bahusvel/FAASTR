@@ -264,6 +264,7 @@ pub struct ContextMemory {
 
 impl ContextMemory {
     pub fn new(count: usize, context_address: VirtualAddress, flags: EntryFlags) -> Option<Self> {
+        assert!(count != 0);
         Some(ContextMemory {
             valloc_mapping: None,
             context_address,
@@ -273,13 +274,13 @@ impl ContextMemory {
         })
     }
 
-    pub fn map_to_kernel(&mut self, flags: EntryFlags) -> VirtualAddress {
+    pub fn map_to_kernel(&mut self, flags: EntryFlags) -> Option<VirtualAddress> {
         if self.valloc_mapping.is_some() {
-            return self.valloc_mapping.as_ref().unwrap().pages.start_address();
+            return Some(self.valloc_mapping.as_ref().unwrap().pages.start_address());
         }
-        let mapping = VallocMapping::new(flags, self.frames.clone()).expect("Failed to valloc");
+        let mapping = VallocMapping::new(flags, self.frames.clone())?;
         self.valloc_mapping = Some(Arc::new(mapping));
-        self.valloc_mapping.as_ref().unwrap().pages.start_address()
+        Some(self.valloc_mapping.as_ref().unwrap().pages.start_address())
     }
 
     pub fn context_address(&self) -> VirtualAddress {
@@ -298,12 +299,23 @@ impl ContextMemory {
         drop(self.valloc_mapping.take())
     }
 
-    pub fn as_slice(&self) -> Option<&[u8]> {
-        Some(self.valloc_mapping.as_ref()?)
+    pub fn as_slice(&self) -> &[u8] {
+        self.valloc_mapping
+            .as_ref()
+            .expect("Map the memory to kernel first, before attempting to access it")
     }
 
-    pub fn as_slice_mut(&mut self) -> Option<&mut [u8]> {
-        Some(Arc::get_mut(self.valloc_mapping.as_mut()?)?)
+    pub fn as_slice_mut(&mut self) -> &mut [u8] {
+        Arc::get_mut(
+            self.valloc_mapping
+                .as_mut()
+                .expect("Map the memory to kernel first, before attempting to access it"),
+        ).expect("Cannot mutate ref_cloned ContextMemory")
+    }
+
+    pub fn zero(&mut self) {
+        let mut slice = self.as_slice_mut();
+        unsafe { intrinsics::write_bytes(slice.as_mut_ptr(), 0, slice.len()) };
     }
 
     pub fn map_context(&mut self, mapper: &mut Mapper) -> MapperFlushAll {
@@ -421,7 +433,7 @@ impl ContextMemory {
 
         let mut memory = self.clone_internal(new_address, None)?;
 
-        memory.as_slice_mut()?.copy_from_slice(&old_mapping);
+        memory.as_slice_mut().copy_from_slice(&old_mapping);
 
         Some(memory)
     }
@@ -470,7 +482,7 @@ impl ContextMemory {
         let mut memory = (&self).clone_internal(None, Some(new_count))?;
 
         {
-            let dst = memory.as_slice_mut()?;
+            let dst = memory.as_slice_mut();
             let src = &old_mapping;
             let dst_len = dst.len();
             if dst.len() > src.len() {

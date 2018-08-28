@@ -88,14 +88,12 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
             ]
         };
 
-        {
-            active_table.with(&mut new_table, &mut temporary_page, |mapper| {
-                for (pml4, frame, flags) in &kernel_areas {
-                    // Not operating on current page table so don't need to flush
-                    mapper.p4_mut()[*pml4].set(frame.clone(), *flags);
-                }
-            });
-        }
+        active_table.with(&mut new_table, &mut temporary_page, |mapper| {
+            for (pml4, frame, flags) in &kernel_areas {
+                // Not operating on current page table so don't need to flush
+                mapper.p4_mut()[*pml4].set(frame.clone(), *flags);
+            }
+        });
 
         // Also need to copy kernel TLS mappings, this really needs to be in its own PML4, so I can copy it above.
         for cpu_id in 0..::cpu_count() {
@@ -156,7 +154,7 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
 
         let mut image: Vec<ContextMemory> = readonly.chain(writable).collect();
 
-        println!("Image is alright");
+        //println!("Image is alright");
 
         let mut stack = ContextMemory::new(
             ::USER_STACK_SIZE / 4096,
@@ -164,13 +162,22 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
             EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
         ).expect("Failed to allocate stack");
 
+        stack
+            .map_to_kernel(EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+            .expect("Map failed");
+        stack.zero();
+
         let mut heap = ContextMemory::new(
             1,
             VirtualAddress::new(::USER_HEAP_OFFSET),
             EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
         ).expect("Failed to allocate heap");
 
-        println!("Stack and heap also aight");
+        heap.map_to_kernel(EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+            .expect("Map failed");
+        heap.zero();
+
+        //println!("Stack and heap also aight");
 
         // Setup user image
         active_table.with(&mut new_table, &mut temporary_page, |mapper| unsafe {
@@ -181,7 +188,7 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
             heap.map_context(mapper).ignore();
         });
 
-        println!("Mapping went well too!");
+        //println!("Mapping went well too!");
 
         // TODO zero out stack and heap
         context.stack = Some(stack);

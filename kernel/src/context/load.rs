@@ -111,7 +111,7 @@ pub fn load(name: &str, data: &[u8]) -> Result<Module> {
             section.map_to_kernel(EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE);
 
             {
-                let mut pages_mem = section.as_slice_mut().expect("Failed to deref as memory");
+                let mut pages_mem = section.as_slice_mut();
                 //Zero out head
                 for i in 0..voff {
                     pages_mem[i as usize] = 0;

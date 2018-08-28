@@ -74,6 +74,8 @@ pub unsafe extern "C" fn kstart(args_ptr: *const KernelArgs) -> ! {
         // Set up GDT before paging
         gdt::init();
 
+        println!("Past initial GDT");
+
         // Set up IDT before paging
         idt::init();
 
@@ -91,6 +93,8 @@ pub unsafe extern "C" fn kstart(args_ptr: *const KernelArgs) -> ! {
 
         // Set up GDT after paging with TLS
         gdt::init_paging(tcb_offset, stack_base + stack_size);
+
+        println!("Past paging gdt");
 
         // Set up IDT
         idt::init_paging();

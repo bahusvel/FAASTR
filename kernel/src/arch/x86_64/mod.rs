@@ -9,6 +9,7 @@ pub mod device;
 
 /// Global descriptor table
 pub mod gdt;
+//pub mod ngdt;
 
 /// Graphical debug
 #[cfg(feature = "graphical_debug")]
