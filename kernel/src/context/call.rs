@@ -85,6 +85,7 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
                 area(::KERNEL_PML4),
                 area(::KERNEL_HEAP_PML4),
                 area(::KERNEL_VALLOC_PML4),
+                area(::KERNEL_PERCPU_PML4),
             ]
         };
 
@@ -96,6 +97,7 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
         });
 
         // Also need to copy kernel TLS mappings, this really needs to be in its own PML4, so I can copy it above.
+        /*
         for cpu_id in 0..::cpu_count() {
             extern "C" {
                 // The starting byte of the thread data segment
@@ -128,7 +130,7 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
                     }
                 });
             }
-        }
+        }*/
 
         println!("Fine until here");
 

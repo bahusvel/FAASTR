@@ -23,11 +23,10 @@ pub unsafe extern "C" fn syscall() {
          push r8
          push r9
          push r10
-         push r11
-         push fs
-         mov r11, 0x18
-         mov fs, r11"
+         push r11"
          : : : : "intel", "volatile");
+
+    fs_push!();
 
     // Get reference to stack variables
     let rsp: usize;

@@ -49,10 +49,10 @@ impl ScratchRegisters {
     }
 }
 
+#[rustfmt::skip]
 macro_rules! scratch_push {
     () => {
-        asm!(
-                                                "push rax
+        asm!("push rax
         push rcx
         push rdx
         push rdi
@@ -61,15 +61,15 @@ macro_rules! scratch_push {
         push r9
         push r10
         push r11"
-                                                : : : : "intel", "volatile"
-                                            )
+        : : : : "intel", "volatile"
+        )
     };
 }
 
+#[rustfmt::skip]
 macro_rules! scratch_pop {
     () => {
-        asm!(
-                                                "pop r11
+        asm!("pop r11
         pop r10
         pop r9
         pop r8
@@ -78,8 +78,8 @@ macro_rules! scratch_pop {
         pop rdx
         pop rcx
         pop rax"
-                                                : : : : "intel", "volatile"
-                                            )
+        : : : : "intel", "volatile"
+        )
     };
 }
 
@@ -105,51 +105,54 @@ impl PreservedRegisters {
     }
 }
 
+#[rustfmt::skip]
 macro_rules! preserved_push {
     () => {
-        asm!(
-                                                "push rbx
+        asm!("push rbx
         push rbp
         push r12
         push r13
         push r14
         push r15"
-                                                : : : : "intel", "volatile"
-                                            )
+        : : : : "intel", "volatile"
+        )
     };
 }
 
+#[rustfmt::skip]
 macro_rules! preserved_pop {
     () => {
-        asm!(
-                                                "pop r15
+        asm!("pop r15
         pop r14
         pop r13
         pop r12
         pop rbp
         pop rbx"
-                                                : : : : "intel", "volatile"
-                                            )
+        : : : : "intel", "volatile"
+        )
     };
 }
-
+#[rustfmt::skip]
 macro_rules! fs_push {
     () => {
-        asm!(
-                                                "push fs
-        mov rax, 0x18
-        mov fs, ax"
-                                                : : : : "intel", "volatile"
-                                            )
+        asm!("push fs
+            mov rax, 0x18
+            mov fs, rax
+            mov ecx, 0xc0000102
+            rdmsr
+            mov ecx, 0xc0000100
+            wrmsr"
+            : : : : "intel", "volatile"
+        )
     };
 }
 
+#[rustfmt::skip]
 macro_rules! fs_pop {
     () => {
-        asm!(
-                                                "pop fs"
-                                                : : : : "intel", "volatile"
-                                            )
+        asm!("pop fs"
+        : : : : "intel", "volatile"
+        )
     };
 }
 
@@ -169,12 +172,12 @@ impl IretRegisters {
     }
 }
 
+#[rustfmt::skip]
 macro_rules! iret {
     () => {
-        asm!(
-                                                "iretq"
-                                                : : : : "intel", "volatile"
-                                            )
+        asm!("iretq"
+        : : : : "intel", "volatile"
+        )
     };
 }
 

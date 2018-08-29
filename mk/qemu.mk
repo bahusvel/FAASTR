@@ -1,5 +1,5 @@
 QEMU=SDL_VIDEO_X11_DGAMOUSE=0 qemu-system-$(ARCH)
-QEMUFLAGS=-serial mon:stdio -d cpu_reset -d guest_errors
+QEMUFLAGS=-serial mon:stdio -d cpu_reset -d guest_errors -d int
 QEMUFLAGS+=-smp 4 -m 2048
 net=no
 vga=no
@@ -23,8 +23,8 @@ endif
 ifeq ($(vga),no)
 	QEMUFLAGS+=-nographic -vga none
 endif
-ifneq ($(gdb),yes)
-	QEMUFLAGS+=-s
+ifeq ($(gdb),yes)
+	QEMUFLAGS+=-S -gdb tcp::9000
 endif
 ifeq ($(UNAME),Linux)
 	ifneq ($(kvm),no)
@@ -56,3 +56,6 @@ qemu_iso_no_build: # build/extra.qcow2
 	$(QEMU) $(QEMUFLAGS) \
 		-boot d -cdrom build/livedisk.iso \
 		# -drive file=build/extra.qcow2
+
+debug_qemu:
+	gdb -ex 'symbol-file build/kernel_live.sym' -ex 'target remote localhost:9000'

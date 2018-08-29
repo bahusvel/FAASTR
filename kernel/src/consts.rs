@@ -26,17 +26,16 @@ pub const KERNEL_VALLOC_PML4: usize = (KERNEL_VALLOC_OFFSET & PML4_MASK) / PML4_
 pub const KERNEL_VALLOC_SIZE: usize = PML4_SIZE;
 
 /// Offset to kernel percpu variables
-//TODO: Use 64-bit fs offset to enable this pub const KERNEL_PERCPU_OFFSET: usize = KERNEL_HEAP_OFFSET - PML4_SIZE;
-pub const KERNEL_PERCPU_OFFSET: usize = 0xC000_0000;
+//TODO: Use 64-bit fs offset to enable this
+pub const KERNEL_PERCPU_OFFSET: usize = KERNEL_VALLOC_OFFSET - PML4_SIZE;
+pub const KERNEL_PERCPU_PML4: usize = (KERNEL_PERCPU_OFFSET & PML4_MASK) / PML4_SIZE;
+//pub const KERNEL_PERCPU_OFFSET: usize = 0xC000_0000;
 /// Size of kernel percpu variables
 pub const KERNEL_PERCPU_SIZE: usize = 64 * 1024; // 64 KB
 
 /// Offset to user image
 pub const USER_OFFSET: usize = 0;
 pub const USER_PML4: usize = (USER_OFFSET & PML4_MASK) / PML4_SIZE;
-
-/// Offset to user TCB
-pub const USER_TCB_OFFSET: usize = 0xB000_0000;
 
 /// Offset to user arguments
 pub const USER_ARG_OFFSET: usize = USER_OFFSET + PML4_SIZE / 2;

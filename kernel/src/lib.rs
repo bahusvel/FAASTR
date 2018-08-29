@@ -31,6 +31,7 @@
 #![feature(ptr_internals)]
 #![feature(thread_local)]
 #![feature(unique)]
+#![feature(tool_attributes)]
 #![no_std]
 
 pub extern crate x86;
@@ -163,23 +164,14 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
 
     println!("Loaded");
 
-    context::cast(context::cached_module("exit").unwrap(), 4162).expect("Failed to call");
-    context::cast(context::cached_module("exit").unwrap(), 4162).expect("Failed to call");
-    context::cast(context::cached_module("exit").unwrap(), 4162).expect("Failed to call");
+    //context::cast(context::cached_module("exit").unwrap(), 4162).expect("Failed to call");
+    //context::cast(context::cached_module("exit").unwrap(), 4162).expect("Failed to call");
+    context::cast(module.clone(), 4162).expect("Failed to call");
 
-    /*
     context::fuse(module.clone(), 4162).expect("Failed to call");
     println!("Exited to caller");
     context::fuse(module, 4162).expect("Failed to call");
     println!("Exited to caller");
-
-    loop {
-        unsafe {
-            interrupt::disable();
-            interrupt::halt();
-        }
-    }
-    */
 
     loop {
         unsafe {
