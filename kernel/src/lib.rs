@@ -35,7 +35,6 @@
 #![no_std]
 
 pub extern crate x86;
-pub extern crate x86_64;
 
 #[macro_use]
 extern crate alloc;

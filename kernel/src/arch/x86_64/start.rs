@@ -252,7 +252,7 @@ pub unsafe fn usermode(ip: usize, sp: usize, arg: usize) -> ! {
          iretq"
          : // No output because it never returns
          :   "{r14}"(gdt::GDT_USER_DATA << 3 | 3), // Data segment
-             "{r15}"(gdt::GDT_USER_TLS << 3 | 3) // TLS segment
+             "{r15}"(gdt::GDT_NULL << 3 | 3) // TLS segment
          : // No clobbers because it never returns
          : "intel", "volatile");
     unreachable!();

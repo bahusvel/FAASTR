@@ -26,24 +26,15 @@ pub extern "C" fn userspace_trampoline() {
 }
 
 pub fn spawn(module: SharedModule) -> Result<Context> {
-    let mut stack = vec![0; 65_536].into_boxed_slice();
     let mut fx = unsafe {
         Box::from_raw(
             ::ALLOCATOR.alloc(Layout::from_size_align_unchecked(512, 16)) as *mut [u8; 512],
         )
     };
-    let mut offset = 0;
 
-    {
-        //zero out FX storage
-        for b in fx.iter_mut() {
-            *b = 0;
-        }
-        offset = stack.len() - mem::size_of::<usize>();
-        unsafe {
-            let func_ptr = stack.as_mut_ptr().offset(offset as isize);
-            *(func_ptr as *mut usize) = userspace_trampoline as usize;
-        }
+    //zero out FX storage
+    for b in fx.iter_mut() {
+        *b = 0;
     }
 
     let mut context = Context::new(module.clone());
@@ -51,9 +42,8 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
     {
         //Initializse some basics
         context.arch.set_fx(fx.as_ptr() as usize);
-        context.arch.set_stack(stack.as_ptr() as usize + offset);
+
         context.kfx = Some(fx);
-        context.kstack = Some(stack);
 
         // Create a new page table
         let mut active_table = unsafe { ActivePageTable::new() };
@@ -95,42 +85,6 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
                 mapper.p4_mut()[*pml4].set(frame.clone(), *flags);
             }
         });
-
-        // Also need to copy kernel TLS mappings, this really needs to be in its own PML4, so I can copy it above.
-        /*
-        for cpu_id in 0..::cpu_count() {
-            extern "C" {
-                // The starting byte of the thread data segment
-                static mut __tdata_start: u8;
-                // The ending byte of the thread BSS segment
-                static mut __tbss_end: u8;
-            }
-
-            let size =
-                unsafe { &__tbss_end as *const _ as usize - &__tdata_start as *const _ as usize };
-
-            let start = ::KERNEL_PERCPU_OFFSET + ::KERNEL_PERCPU_SIZE * cpu_id;
-            let end = start + size;
-
-            let start_page = Page::containing_address(VirtualAddress::new(start));
-            let end_page = Page::containing_address(VirtualAddress::new(end - 1));
-            for page in Page::range_inclusive(start_page, end_page) {
-                let frame = active_table
-                    .translate_page(page)
-                    .expect("kernel percpu not mapped");
-                active_table.with(&mut new_table, &mut temporary_page, |mapper| {
-                    let result = mapper.map_to(
-                        page,
-                        frame,
-                        EntryFlags::PRESENT | EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE,
-                    );
-                    // Ignore result due to operating on inactive table
-                    unsafe {
-                        result.ignore();
-                    }
-                });
-            }
-        }*/
 
         println!("Fine until here");
 
@@ -206,8 +160,10 @@ pub fn fuse(module: SharedModule, func: usize) -> Result<()> {
         let mut context = spawn(module)?;
         let mut contexts_lock = context::contexts_mut();
         {
-            let context_lock = contexts_lock.current().expect("No current context");
+            let mut context_lock = contexts_lock.current().expect("No current context");
             context.ret_link = Some(context_lock.clone());
+            context.cpu_id = context_lock.read().cpu_id;
+            //context.kstack = Some(vec![0; 65_536].into_boxed_slice());
         }
 
         contexts_lock.insert(context)?.clone()
@@ -224,6 +180,19 @@ pub fn fuse(module: SharedModule, func: usize) -> Result<()> {
 
 pub fn cast(module: SharedModule, func: usize) -> Result<SharedContext> {
     let mut context = spawn(module)?;
+    let mut stack = vec![0; 65_536].into_boxed_slice();
+
+    let mut offset = 0;
+
+    offset = stack.len() - mem::size_of::<usize>();
+    unsafe {
+        let func_ptr = stack.as_mut_ptr().offset(offset as isize);
+        *(func_ptr as *mut usize) = userspace_trampoline as usize;
+    }
+
+    context.arch.set_stack(stack.as_ptr() as usize + offset);
+    context.kstack = Some(stack);
+
     context.status = context::Status::Runnable;
 
     Ok(context::contexts_mut().insert(context)?.clone())

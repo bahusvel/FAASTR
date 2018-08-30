@@ -6,6 +6,7 @@ use alloc::arc::Arc;
 use alloc::boxed::Box;
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::Ordering;
+use gdt;
 use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub use self::call::{cast, fuse};
@@ -66,6 +67,9 @@ pub fn init() {
     context.kfx = Some(fx);
     context.status = Status::Running;
     context.cpu_id = Some(::cpu_id());
+    let stack = vec![0; 65_536].into_boxed_slice();
+    unsafe { gdt::set_tss_stack(stack.as_ptr() as usize + stack.len()) };
+    context.kstack = Some(stack);
 
     let inserted = contexts_mut()
         .insert(context)

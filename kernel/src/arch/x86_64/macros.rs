@@ -150,7 +150,7 @@ macro_rules! fs_push {
 #[rustfmt::skip]
 macro_rules! fs_pop {
     () => {
-        asm!("pop fs"
+        asm!("add rsp, 8"
         : : : : "intel", "volatile"
         )
     };

@@ -67,6 +67,10 @@ impl Context {
         self.rsp = address;
     }
 
+    pub fn get_stack(&self) -> usize {
+        self.rsp
+    }
+
     pub unsafe fn signal_stack(&mut self, handler: extern "C" fn(usize), sig: u8) {
         self.push_stack(sig as usize);
         self.push_stack(handler as usize);
@@ -133,8 +137,6 @@ impl Context {
     pub unsafe fn switch_discarding(&self, next: &mut Context) {
         if next.loadable {
             asm!("fxrstor [$0]" : : "r"(next.fx) : "memory" : "intel", "volatile");
-        } else {
-            asm!("fninit" : : : "memory" : "intel", "volatile");
         }
         if next.cr3 != self.cr3 {
             asm!("mov cr3, $0" : : "r"(next.cr3) : "memory" : "intel", "volatile");
@@ -210,7 +212,7 @@ impl Context {
              iretq"
              : // No output because it never returns
              :   "{r14}"(gdt::GDT_USER_DATA << 3 | 3), // Data segment
-                 "{r15}"(gdt::GDT_USER_TLS << 3 | 3) // TLS segment
+                 "{r15}"(gdt::GDT_NULL << 3 | 3) // TLS segment
              : // No clobbers because it never returns
              : "intel", "volatile");
         unreachable!();
