@@ -103,8 +103,6 @@ pub mod syscall;
 pub mod time;
 
 /// Tests
-#[cfg(test)]
-pub mod tests;
 
 #[global_allocator]
 static ALLOCATOR: allocator::Allocator = allocator::Allocator;
