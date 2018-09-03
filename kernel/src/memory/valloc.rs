@@ -1,5 +1,5 @@
 use alloc::Vec;
-use arch::paging::{Page, PageIter, VirtualAddress, PAGE_SIZE};
+use arch::paging::{Page, VirtualAddress, PAGE_SIZE};
 
 /// Allocator that doesnt actually allocate memory but rather virtual memory pages
 pub struct Valloc {
@@ -80,7 +80,6 @@ impl Valloc {
             self.free.swap_remove(best_fit_index);
 
             let start = best_fit.0 + (best_fit.1 - count) * PAGE_SIZE;
-            let end = start + count * PAGE_SIZE;
 
             println!("Valloced 0x{:X}", start);
 

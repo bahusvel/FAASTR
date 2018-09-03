@@ -1,8 +1,7 @@
-use alloc::arc::{Arc, Weak};
+use alloc::arc::Arc;
 use alloc::VecDeque;
 use core::ops::{Deref, DerefMut};
 use core::{intrinsics, slice};
-use spin::Mutex;
 
 use memory::{
     allocate_frames, allocate_unmapped_pages, deallocate_frames, Frame, FrameIter, VallocPages,
@@ -11,7 +10,7 @@ use paging::entry::EntryFlags;
 use paging::mapper::{Mapper, MapperFlushAll};
 use paging::temporary_page::TemporaryPage;
 use paging::{
-    ActivePageTable, InactivePageTable, Page, PageIter, PhysicalAddress, VirtualAddress, PAGE_SIZE,
+    ActivePageTable, InactivePageTable, Page, PhysicalAddress, VirtualAddress, PAGE_SIZE,
 };
 
 #[derive(Debug)]
@@ -314,7 +313,7 @@ impl ContextMemory {
     }
 
     pub fn zero(&mut self) {
-        let mut slice = self.as_slice_mut();
+        let slice = self.as_slice_mut();
         unsafe { intrinsics::write_bytes(slice.as_mut_ptr(), 0, slice.len()) };
     }
 
@@ -407,7 +406,7 @@ impl ContextMemory {
     ) -> Option<Self> {
         let frames = Arc::new(Frames::new(new_count.unwrap_or(self.frames.count))?);
 
-        let mut new_mapping = VallocMapping::new(
+        let new_mapping = VallocMapping::new(
             EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
             frames.clone(),
         )?;

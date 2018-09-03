@@ -54,3 +54,12 @@ pub fn pause() {
         asm!("pause" : : : : "intel", "volatile");
     }
 }
+
+macro_rules! critical_section {
+    ($e:expr) => {{
+        disable();
+        let e_out = e;
+        enable_and_nop();
+        e
+    }};
+}

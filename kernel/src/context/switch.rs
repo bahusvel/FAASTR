@@ -4,7 +4,6 @@ use gdt;
 use interrupt;
 use interrupt::irq::PIT_TICKS;
 use time;
-use x86::shared::msr;
 
 unsafe fn update(context: &mut Context, cpu_id: usize) {
     // Take ownership if not already owned

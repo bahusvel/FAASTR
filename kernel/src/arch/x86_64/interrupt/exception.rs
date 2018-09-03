@@ -1,8 +1,6 @@
 use interrupt::stack_trace;
 use syscall::flag::*;
 
-use x86::shared::msr;
-
 extern "C" {
     fn ksignal(signal: usize);
 }

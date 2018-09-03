@@ -1,23 +1,11 @@
-use alloc::arc::Arc;
-use alloc::boxed::Box;
-use alloc::{BTreeMap, Vec};
-use core::alloc::{GlobalAlloc, Layout};
-use core::{intrinsics, mem, str};
-use spin::Mutex;
-
 use context;
-use context::{ContextId, Status, WaitpidKey};
+use context::{ContextId, Status};
 use interrupt;
 use paging::temporary_page::TemporaryPage;
-use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress, PAGE_SIZE};
+use paging::{InactivePageTable, Page, VirtualAddress, PAGE_SIZE};
 
-use syscall::data::SigAction;
 use syscall::error::*;
-use syscall::flag::{
-    wifcontinued, wifstopped, CLONE_SIGHAND, CLONE_VFORK, CLONE_VM, SIGCONT, SIGTERM, SIG_DFL,
-    WCONTINUED, WNOHANG, WUNTRACED,
-};
-use syscall::validate::{validate_slice, validate_slice_mut};
+use syscall::flag::SIGTERM;
 
 pub fn brk(address: usize) -> Result<usize> {
     let contexts = context::contexts();

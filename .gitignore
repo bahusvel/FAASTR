@@ -4,3 +4,5 @@ rust.redox
 # Magic rule to exclude binaries in test 
 test/*
 !test/*.*
+
+target

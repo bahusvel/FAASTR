@@ -1,6 +1,5 @@
 use super::memory::ContextMemory;
 use super::SharedModule;
-use alloc::arc::Arc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use arch::interrupt;
@@ -12,7 +11,6 @@ use memory::allocate_frames;
 use paging::entry::EntryFlags;
 use paging::temporary_page::TemporaryPage;
 use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress};
-use spin::RwLock;
 use start::usermode;
 use syscall::error::*;
 
@@ -182,9 +180,7 @@ pub fn cast(module: SharedModule, func: usize) -> Result<SharedContext> {
     let mut context = spawn(module)?;
     let mut stack = vec![0; 65_536].into_boxed_slice();
 
-    let mut offset = 0;
-
-    offset = stack.len() - mem::size_of::<usize>();
+    let offset = stack.len() - mem::size_of::<usize>();
     unsafe {
         let func_ptr = stack.as_mut_ptr().offset(offset as isize);
         *(func_ptr as *mut usize) = userspace_trampoline as usize;

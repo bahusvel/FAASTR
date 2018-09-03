@@ -93,7 +93,6 @@ pub fn syscall(
                 let string = from_utf8(slice).map_err(|_| Error::new(EINVAL))?;
                 let contexts = ::context::contexts();
                 if let Some(context_lock) = contexts.current() {
-                    /// This function
                     let context = context_lock.read();
                     println!("{}: {}", context.name, string);
                 }

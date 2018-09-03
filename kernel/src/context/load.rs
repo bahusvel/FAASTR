@@ -1,17 +1,12 @@
 use super::memory::ContextMemory;
 use alloc::arc::Arc;
-use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::{BTreeMap, Vec};
-use core::alloc::{GlobalAlloc, Layout};
-use core::ops::{Deref, DerefMut};
 use core::str;
-use elf::{self, program_header, Elf};
-use memory::{Frame, VallocPages};
+use elf::{self, program_header};
 use paging::entry::EntryFlags;
-use paging::mapper::MapperFlushAll;
-use paging::{ActivePageTable, VirtualAddress};
-use spin::{Once, RwLock};
+use paging::VirtualAddress;
+use spin::RwLock;
 use syscall::error::*;
 
 lazy_static! {

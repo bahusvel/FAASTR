@@ -4,7 +4,7 @@ use interrupt::syscall::SyscallStack;
 use memory::{allocate_frames, deallocate_frames, Frame};
 use paging::entry::EntryFlags;
 use paging::{ActivePageTable, PhysicalAddress, VirtualAddress};
-use syscall::error::{Error, Result, EFAULT, EINVAL, ENOMEM, EPERM, ESRCH};
+use syscall::error::{Error, Result, EFAULT, EINVAL, ENOMEM, ESRCH};
 use syscall::flag::{MAP_WRITE, MAP_WRITE_COMBINE};
 
 fn enforce_root() -> Result<()> {
