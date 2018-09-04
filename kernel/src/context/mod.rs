@@ -2,17 +2,19 @@
 //!
 //! For resources on contexts, please consult [wikipedia](https://en.wikipedia.org/wiki/Context_switch) and  [osdev](https://wiki.osdev.org/Context_Switching)
 use self::load::KERNEL_MODULE;
-use alloc::arc::Arc;
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::Ordering;
 use gdt;
 use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-pub use self::call::{cast, fuse};
+pub use self::call::{cast_name, cast_ptr, fuse_name, fuse_ptr};
 pub use self::context::{Context, ContextId, SharedContext, Status, WaitpidKey};
 pub use self::list::ContextList;
-pub use self::load::{cached_module, load_and_cache, Module, SharedModule};
+pub use self::load::{
+    cached_module, load_and_cache, FuncPtr, Module, ModuleFuncPtr, SharedModule, INVALID_FUNCTION,
+};
 pub use self::switch::{fuse_return, fuse_switch, switch};
 
 #[path = "arch/x86_64.rs"]

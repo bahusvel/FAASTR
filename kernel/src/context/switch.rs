@@ -24,9 +24,10 @@ unsafe fn update(context: &mut Context, cpu_id: usize) {
     }
 }
 
-unsafe fn runnable(context: &Context, cpu_id: usize) -> bool {
+fn runnable(context: &Context, cpu_id: usize) -> bool {
     // Switch to context if it needs to run, is not currently running, and is owned by the current CPU
-    context.status == Status::Runnable && context.cpu_id == Some(cpu_id)
+    (context.status == Status::Runnable || context.status == Status::New)
+        && context.cpu_id == Some(cpu_id)
 }
 
 /// Switch to the next context
@@ -88,18 +89,23 @@ pub unsafe fn switch() -> bool {
             }
         }
     };
-
+    let from = &mut *from_ptr;
     // Switch process states, TSS stack pointer, and store new context ID
+    let mut to_user = false;
     if to_ptr as usize != 0 {
+        let to = &mut *to_ptr;
         // NOTE is this correct assumption?
-        if (&mut *from_ptr).status == Status::Running {
-            (&mut *from_ptr).status = Status::Runnable;
+        if from.status == Status::Running {
+            from.status = Status::Runnable;
         }
-        (&mut *to_ptr).status = Status::Running;
-        if let Some(ref stack) = (*to_ptr).kstack {
+        if to.status == Status::New {
+            to_user = true;
+        }
+        to.status = Status::Running;
+        if let Some(ref stack) = to.kstack {
             gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
         }
-        CONTEXT_ID.store((&mut *to_ptr).id, Ordering::SeqCst);
+        CONTEXT_ID.store(to.id, Ordering::SeqCst);
     }
 
     // Unset global lock before switch, as arch is only usable by the current CPU at this time
@@ -109,8 +115,14 @@ pub unsafe fn switch() -> bool {
         // No target was found, return
         false
     } else {
-        println!("Switch gonna switch {:?}", (*to_ptr).id);
-        (&mut *from_ptr).arch.switch_to(&mut (&mut *to_ptr).arch);
+        let to = &mut *to_ptr;
+        println!("Switch gonna switch {:?}, {}", to.id, to_user);
+        if to_user {
+            let sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
+            from.arch.switch_user(&mut to.arch, to.function, sp, 0);
+        } else {
+            from.arch.switch_to(&mut to.arch);
+        }
         true
     }
 }

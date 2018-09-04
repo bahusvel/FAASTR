@@ -1,29 +1,19 @@
 use super::memory::ContextMemory;
-use super::SharedModule;
+use super::{FuncPtr, ModuleFuncPtr, SharedModule};
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::vec::Vec;
 use arch::interrupt;
 use context;
-use context::{Context, SharedContext};
+use context::{Context, SharedContext, Status};
 use core::alloc::{GlobalAlloc, Layout};
-use core::mem;
+use error::*;
 use memory::allocate_frames;
 use paging::entry::EntryFlags;
 use paging::temporary_page::TemporaryPage;
 use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress};
-use start::usermode;
-use syscall::error::*;
 
-pub extern "C" fn userspace_trampoline() {
-    println!("Exited into trampoline");
-    unsafe {
-        let sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
-        // Go to usermode
-        usermode(4162, sp, 0);
-    }
-}
-
-pub fn spawn(module: SharedModule) -> Result<Context> {
+pub fn spawn(module: SharedModule) -> Result<'static, Context> {
     let mut fx = unsafe {
         Box::from_raw(
             ::ALLOCATOR.alloc(Layout::from_size_align_unchecked(512, 16)) as *mut [u8; 512],
@@ -153,9 +143,21 @@ pub fn spawn(module: SharedModule) -> Result<Context> {
     Ok(context)
 }
 
-pub fn fuse(module: SharedModule, func: usize) -> Result<()> {
+pub fn fuse_name(module: SharedModule, func: &str) -> Result<'static, ()> {
+    let f = module.function(func).ok_or("Function not found")?;
+    let mut context = spawn(module)?;
+    context.name = Some(String::from(func));
+    fuse_inner(context, f)
+}
+
+pub fn fuse_ptr(func: FuncPtr) -> Result<'static, ()> {
+    let context = spawn(func.0)?;
+    fuse_inner(context, func.1)
+}
+
+fn fuse_inner(mut context: Context, func: ModuleFuncPtr) -> Result<'static, ()> {
+    context.function = func;
     let inserted = {
-        let mut context = spawn(module)?;
         let mut contexts_lock = context::contexts_mut();
         {
             let mut context_lock = contexts_lock.current().expect("No current context");
@@ -176,20 +178,26 @@ pub fn fuse(module: SharedModule, func: usize) -> Result<()> {
     Ok(())
 }
 
-pub fn cast(module: SharedModule, func: usize) -> Result<SharedContext> {
+pub fn cast_name(module: SharedModule, func: &str) -> Result<'static, SharedContext> {
+    let f = module.function(func).ok_or("Function not found")?;
     let mut context = spawn(module)?;
-    let mut stack = vec![0; 65_536].into_boxed_slice();
+    context.name = Some(String::from(func));
+    cast_inner(context, f)
+}
 
-    let offset = stack.len() - mem::size_of::<usize>();
-    unsafe {
-        let func_ptr = stack.as_mut_ptr().offset(offset as isize);
-        *(func_ptr as *mut usize) = userspace_trampoline as usize;
-    }
+pub fn cast_ptr(func: FuncPtr) -> Result<'static, SharedContext> {
+    let context = spawn(func.0)?;
+    cast_inner(context, func.1)
+}
 
-    context.arch.set_stack(stack.as_ptr() as usize + offset);
+fn cast_inner(mut context: Context, func: ModuleFuncPtr) -> Result<'static, SharedContext> {
+    context.function = func;
+    context.status = Status::New;
+    let stack = vec![0; 65_536].into_boxed_slice();
+    context
+        .arch
+        .set_stack(stack.as_ptr() as usize + stack.len());
     context.kstack = Some(stack);
-
-    context.status = context::Status::Runnable;
 
     Ok(context::contexts_mut().insert(context)?.clone())
 }

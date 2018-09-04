@@ -1,4 +1,5 @@
-use alloc::{String, Vec};
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::ops::Range;
 
 use super::data::TimeSpec;

@@ -1,5 +1,5 @@
-use alloc::arc::Arc;
-use alloc::VecDeque;
+use alloc::collections::vec_deque::VecDeque;
+use alloc::sync::Arc;
 use core::ops::{Deref, DerefMut};
 use core::{intrinsics, slice};
 

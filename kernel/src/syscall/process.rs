@@ -48,13 +48,14 @@ fn empty(context: &mut context::Context, reaping: bool) {
         drop(context.stack.take());
     }
 
+    let name = context.name();
     let grants = &mut context.grants;
     for grant in grants.drain(..) {
         if reaping {
             println!(
                 "{}: {}: Grant should not exist: {:?}",
                 context.id.into(),
-                context.name,
+                name,
                 grant
             );
 
@@ -84,6 +85,8 @@ pub fn exit(status: usize) -> ! {
             (context.id, context.ret_link.take())
         };
 
+        println!("PID {:?} exited", pid);
+
         if let Some(parent) = parent {
             unsafe {
                 interrupt::disable();
@@ -112,7 +115,6 @@ pub fn exit(status: usize) -> ! {
         } else {
             //reap(pid).expect("Failed to reap context");
         }
-        println!("PID {:?} exited", pid);
     }
 
     let _ = unsafe { context::switch() };

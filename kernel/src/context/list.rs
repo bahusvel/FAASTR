@@ -1,6 +1,6 @@
-use alloc::arc::Arc;
 use alloc::boxed::Box;
-use alloc::BTreeMap;
+use alloc::collections::btree_map::BTreeMap;
+use alloc::sync::Arc;
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem;
 use core::sync::atomic::Ordering;
@@ -9,7 +9,7 @@ use spin::RwLock;
 
 use super::context::{Context, ContextId, SharedContext};
 use super::load::KERNEL_MODULE;
-use syscall::error::{Error, Result, EAGAIN};
+use error::*;
 
 /// Context list type
 pub struct ContextList {
@@ -36,12 +36,12 @@ impl ContextList {
         self.map.get(&super::CONTEXT_ID.load(Ordering::SeqCst))
     }
 
-    pub fn iter(&self) -> ::alloc::btree_map::Iter<ContextId, SharedContext> {
+    pub fn iter(&self) -> ::alloc::collections::btree_map::Iter<ContextId, SharedContext> {
         self.map.iter()
     }
 
     /// Enqueue the context to the global list
-    pub fn insert(&mut self, mut context: Context) -> Result<&SharedContext> {
+    pub fn insert(&mut self, mut context: Context) -> Result<'static, &SharedContext> {
         if self.next_id >= super::CONTEXT_MAX_CONTEXTS {
             self.next_id = 1;
         }
@@ -51,7 +51,7 @@ impl ContextList {
         }
 
         if self.next_id >= super::CONTEXT_MAX_CONTEXTS {
-            return Err(Error::new(EAGAIN));
+            return Err("Reached maximum number of contexts");
         }
 
         let id = ContextId::from(self.next_id);
@@ -68,7 +68,7 @@ impl ContextList {
         Ok(self
             .map
             .get(&id)
-            .expect("Failed to insert new context. ID is out of bounds."))
+            .ok_or("Failed to insert new context. ID is out of bounds.")?)
     }
 
     /// Spawn a context from a kernel function

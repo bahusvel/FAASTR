@@ -94,7 +94,7 @@ pub fn syscall(
                 let contexts = ::context::contexts();
                 if let Some(context_lock) = contexts.current() {
                     let context = context_lock.read();
-                    println!("{}: {}", context.name, string);
+                    println!("{}: {}", context.name(), string);
                 }
                 Ok(10)
             }

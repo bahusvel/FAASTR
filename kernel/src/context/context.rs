@@ -1,11 +1,12 @@
-use alloc::arc::Arc;
 use alloc::boxed::Box;
 use alloc::string::String;
-use alloc::{BTreeMap, Vec};
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::cmp::Ordering;
+use hashmap_core::fnv::FnvHashMap;
 use spin::{Mutex, RwLock};
 
-use super::SharedModule;
+use super::{ModuleFuncPtr, SharedModule, INVALID_FUNCTION};
 use context::arch;
 use context::memory::{ContextMemory, Grant};
 use device;
@@ -24,6 +25,7 @@ pub enum Status {
     Running,
     Runnable,
     Blocked,
+    New,
     Stopped(usize),
     Exited(usize),
 }
@@ -116,10 +118,12 @@ pub struct Context {
     pub stack: Option<ContextMemory>,
     /// User grants
     pub grants: Vec<Grant>,
-    /// The name of the context
-    pub name: String,
+    /// Pointer to the function
+    pub function: ModuleFuncPtr,
+    /// The name of the function
+    pub name: Option<String>,
     /// The process environment
-    pub env: BTreeMap<Box<[u8]>, Arc<Mutex<Vec<u8>>>>,
+    pub env: FnvHashMap<Box<[u8]>, Arc<Mutex<Vec<u8>>>>,
     /// Module this function was spawned ALLOCATOR
     pub module: SharedModule,
 }
@@ -140,10 +144,20 @@ impl Context {
             heap: None,
             stack: None,
             grants: Vec::new(),
-            name: String::new(),
-            env: BTreeMap::new(),
+            function: INVALID_FUNCTION,
+            name: None,
+            env: FnvHashMap::new(),
             module: module,
         }
+    }
+
+    pub fn name(&self) -> String {
+        format!(
+            "{}::{}(0x{:x})",
+            self.module.name(),
+            self.name.as_ref().unwrap_or(&String::from("")),
+            self.function
+        )
     }
 
     /// Block the context, and return true if it was runnable before being blocked

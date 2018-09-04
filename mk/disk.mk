@@ -1,9 +1,9 @@
 clean_initfs:
 	rm -rf build/initfs || true
 
-build/initfs: test/exit
+build/initfs: build/tests
 	mkdir -p $@ || true
-	cp $< $@
+	cp -r $< $@
 
 build/bootloader: bootloader/$(ARCH)/**
 	mkdir -p build

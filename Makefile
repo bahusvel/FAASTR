@@ -21,6 +21,7 @@ include mk/kernel.mk
 
 # Disk images
 include mk/disk.mk
+include mk/tools.mk
 include mk/tests.mk
 
 rust-src:

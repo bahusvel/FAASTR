@@ -13,7 +13,7 @@ long sys_write(void *buf, long len) {
   return r;
 }
 
-void _start() {
+void hellohelloexit() {
   const char *hello = "hello";
   sys_write((void *)hello, 5);
   sys_write((void *)hello, 5);

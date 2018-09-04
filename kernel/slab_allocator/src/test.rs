@@ -1,6 +1,6 @@
-use core::mem::{align_of, size_of};
-use alloc::allocator::Layout;
 use super::*;
+use allocproxy::allocator::Layout;
+use core::mem::{align_of, size_of};
 
 const HEAP_SIZE: usize = 8 * 4096;
 const BIG_HEAP_SIZE: usize = HEAP_SIZE * 10;
@@ -167,5 +167,4 @@ fn allocate_multiple_4096_blocks() {
     }
     assert_eq!(a as usize + 9 * 4096, c as usize);
     assert_eq!(b as usize - 4096, d as usize);
-
 }

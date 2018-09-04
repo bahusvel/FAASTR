@@ -1,8 +1,9 @@
 //! ELF executables
 
-use alloc::String;
+use alloc::str::from_utf8;
+use alloc::string::String;
 
-use goblin::elf::section_header::SHT_SYMTAB;
+use goblin::elf::section_header::{SHT_STRTAB, SHT_SYMTAB};
 
 #[cfg(target_arch = "x86")]
 pub use goblin::elf32::{header, program_header, section_header, sym};
@@ -13,6 +14,8 @@ pub use goblin::elf64::{header, program_header, section_header, sym};
 /// An ELF executable
 pub struct Elf<'a> {
     pub data: &'a [u8],
+    strtab: Option<&'a [u8]>,
+    shstrtab: Option<&'a [u8]>,
     header: &'a header::Header,
 }
 
@@ -38,10 +41,24 @@ impl<'a> Elf<'a> {
                 header::ELFCLASS
             ))
         } else {
-            Ok(Elf {
+            let mut ef = Elf {
                 data: data,
+                strtab: None,
+                shstrtab: None,
                 header: unsafe { &*(data.as_ptr() as usize as *const header::Header) },
-            })
+            };
+
+            ef.strtab = ef
+                .sections()
+                .find(|h| h.sh_type == SHT_STRTAB)
+                .map(|h| &data[h.sh_offset as usize..(h.sh_offset + h.sh_size) as usize]);
+
+            ef.shstrtab = ef
+                .sections()
+                .nth(ef.header.e_shstrndx as usize)
+                .map(|h| &data[h.sh_offset as usize..(h.sh_offset + h.sh_size) as usize]);
+
+            Ok(ef)
         }
     }
 
@@ -51,6 +68,39 @@ impl<'a> Elf<'a> {
             header: self.header,
             i: 0,
         }
+    }
+
+    pub fn lookup_section_name(&'a self, index: u32) -> Option<&'a str> {
+        let mut end = index as usize;
+        if self.shstrtab.is_none() {
+            return None;
+        }
+        while end < self.shstrtab.unwrap().len() {
+            let b = self.shstrtab.unwrap()[end];
+            end += 1;
+            if b == 0 {
+                break;
+            }
+        }
+        if end > index as usize {
+            let sym_name = &self.shstrtab.unwrap()[index as usize..end - 1];
+            from_utf8(sym_name).ok()
+        } else {
+            None
+        }
+    }
+
+    pub fn section_data_by_name(&'a self) -> Option<&'a [u8]> {
+        for section in self.sections() {
+            let name = self.lookup_section_name(section.sh_name)?;
+            if name == ".manifest" {
+                return Some(
+                    &self.data[section.sh_offset as usize
+                                   ..(section.sh_offset + section.sh_size) as usize],
+                );
+            }
+        }
+        None
     }
 
     pub fn segments(&'a self) -> ElfSegments<'a> {

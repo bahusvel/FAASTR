@@ -16,12 +16,8 @@
 #![feature(alloc)]
 #![feature(allocator_api)]
 #![feature(asm)]
-#![feature(collections)]
 #![feature(concat_idents)]
-#![feature(const_atomic_usize_new)]
 #![feature(const_fn)]
-#![feature(const_max_value)]
-#![feature(const_size_of)]
 #![feature(core_intrinsics)]
 #![feature(integer_atomics)]
 #![feature(lang_items)]
@@ -30,7 +26,6 @@
 #![feature(panic_implementation)]
 #![feature(ptr_internals)]
 #![feature(thread_local)]
-#![feature(unique)]
 #![feature(tool_attributes)]
 #![no_std]
 
@@ -44,8 +39,12 @@ extern crate lazy_static;
 
 #[macro_use]
 extern crate bitflags;
+#[macro_use]
+extern crate serde_derive;
 extern crate goblin;
+extern crate hashmap_core;
 extern crate linked_list_allocator;
+extern crate serde_json_core;
 #[cfg(feature = "slab")]
 extern crate slab_allocator;
 extern crate spin;
@@ -99,6 +98,7 @@ pub mod sync;
 /// Syscall handlers
 pub mod syscall;
 
+pub mod error;
 /// Time
 pub mod time;
 
@@ -155,19 +155,16 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     */
 
     let module = context::load_and_cache(
-        "exit",
-        initfs_get_file(b"/exit").expect("Could not find exit in initfs"),
+        initfs_get_file(b"/tests/exit").expect("Could not find exit in initfs"),
     ).expect("Failed to load module");
 
     println!("Loaded");
 
-    //context::cast(context::cached_module("exit").unwrap(), 4162).expect("Failed to call");
-    //context::cast(context::cached_module("exit").unwrap(), 4162).expect("Failed to call");
-    context::cast(module.clone(), 4162).expect("Failed to call");
+    context::cast_name(module.clone(), "hellohelloexit").expect("Failed to call");
 
-    context::fuse(module.clone(), 4162).expect("Failed to call");
+    context::fuse_name(module.clone(), "hellohelloexit").expect("Failed to call");
     println!("Exited to caller");
-    context::fuse(module, 4162).expect("Failed to call");
+    context::fuse_name(module, "hellohelloexit").expect("Failed to call");
     println!("Exited to caller");
 
     loop {
@@ -230,7 +227,7 @@ pub extern "C" fn ksignal(signal: usize) {
         let contexts = context::contexts();
         if let Some(context_lock) = contexts.current() {
             let context = context_lock.read();
-            println!("NAME {}", context.name);
+            println!("NAME {}", context.name());
         }
     }
     syscall::exit(signal & 0x7F);

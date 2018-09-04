@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use alloc::btree_map::BTreeMap;
+use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;
 
 use super::namespace::{

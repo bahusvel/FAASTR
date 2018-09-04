@@ -1,4 +1,4 @@
-use alloc::Vec;
+use alloc::vec::Vec;
 use arch::paging::{Page, VirtualAddress, PAGE_SIZE};
 
 /// Allocator that doesnt actually allocate memory but rather virtual memory pages
@@ -81,7 +81,7 @@ impl Valloc {
 
             let start = best_fit.0 + (best_fit.1 - count) * PAGE_SIZE;
 
-            println!("Valloced 0x{:X}", start);
+            //println!("Valloced 0x{:X}", start);
 
             Some(Page::containing_address(VirtualAddress::new(start)))
         } else {
@@ -90,7 +90,7 @@ impl Valloc {
     }
 
     pub fn deallocate_pages(&mut self, page: Page, count: usize) {
-        println!("Unvalloced 0x{:X}", page.start_address().get());
+        //println!("Unvalloced 0x{:X}", page.start_address().get());
         let address = page.start_address().get();
         if !self.merge(address, count) {
             self.free.push((address, count));
