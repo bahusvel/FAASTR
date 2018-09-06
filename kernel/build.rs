@@ -50,7 +50,7 @@ fn fill_from_location(f: &mut fs::File, loc: &Path) -> Result<(), (Error)> {
     let (_, mut files) = scan_folder(loc);
 
     let loc_str = loc.to_str().unwrap();
-    let mut idx = loc_str.len();
+    let mut idx = loc_str.len() + 1;
     files.sort();
 
     for name in files.iter() {
@@ -76,7 +76,7 @@ fn main() {
     // Write header
     f.write_all(
         b"
-    pub fn initfs_get_file(name: &'static [u8]) -> Option<&'static [u8]> {
+    pub fn initfs_get_file(name: &[u8]) -> Option<&'static [u8]> {
         match name {
 ",
     ).unwrap();

@@ -4,8 +4,9 @@ TEST_PREFIX = build/tests
 
 $(TEST_PREFIX): FORCE
 	mkdir -p $@
-	make build/tests/exit
+	make $(TEST_PREFIX)/exit
+	make $(TEST_PREFIX)/call
 
-$(TEST_PREFIX)/exit: test/exit.c build/symbind
+$(TEST_PREFIX)/%: test/%.c build/symbind
 	gcc -nostdlib $< -o $@
 	build/symbind -m $@

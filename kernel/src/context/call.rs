@@ -161,8 +161,16 @@ fn fuse_inner(mut context: Context, func: ModuleFuncPtr) -> Result<'static, ()> 
         {
             let mut context_lock = contexts_lock.current().expect("No current context");
             context.ret_link = Some(context_lock.clone());
+
             context.cpu_id = context_lock.read().cpu_id;
-            //context.kstack = Some(vec![0; 65_536].into_boxed_slice());
+            let (stack, address) = ContextMemory::new_kernel(
+                65_536 / PAGE_SIZE,
+                EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+            ).ok_or("Failed to allocate kernel stack")?;
+            context
+                .arch
+                .set_stack(address.get() as usize + stack.len_bytes());
+            context.kstack = Some(stack);
         }
 
         contexts_lock.insert(context)?.clone()

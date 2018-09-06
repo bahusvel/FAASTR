@@ -3,7 +3,7 @@ clean_initfs:
 
 build/initfs: build/tests
 	mkdir -p $@ || true
-	cp -r $< $@
+	cp -r $</* $@
 
 build/bootloader: bootloader/$(ARCH)/**
 	mkdir -p build

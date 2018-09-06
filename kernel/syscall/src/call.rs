@@ -25,27 +25,9 @@ pub unsafe fn brk(addr: usize) -> Result<usize> {
     syscall1(SYS_BRK, addr)
 }
 
-/// Produce a fork of the current process, or a new process thread
-pub unsafe fn clone(flags: usize) -> Result<usize> {
-    syscall1_clobber(SYS_CLONE, flags)
-}
-
 /// Get the current system time
 pub fn clock_gettime(clock: usize, tp: &mut TimeSpec) -> Result<usize> {
     unsafe { syscall2(SYS_CLOCK_GETTIME, clock, tp as *mut TimeSpec as usize) }
-}
-
-/// Replace the current process with a new executable
-pub fn execve<T: AsRef<[u8]>>(path: T, args: &[[usize; 2]]) -> Result<usize> {
-    unsafe {
-        syscall4(
-            SYS_EXECVE,
-            path.as_ref().as_ptr() as usize,
-            path.as_ref().len(),
-            args.as_ptr() as usize,
-            args.len(),
-        )
-    }
 }
 
 /// Exit the current process
@@ -75,7 +57,6 @@ pub unsafe fn futex(
 pub fn getpid() -> Result<usize> {
     unsafe { syscall0(SYS_GETPID) }
 }
-
 
 /// Set the I/O privilege level
 pub unsafe fn iopl(level: usize) -> Result<usize> {

@@ -7,11 +7,12 @@ extern crate syscall;
 pub use self::syscall::{data, error, flag, io, number};
 
 pub use self::driver::*;
-pub use self::futex::futex;
+//pub use self::futex::futex;
 pub use self::process::*;
 pub use self::time::*;
 pub use self::validate::*;
 
+use self::call::{sys_cast, sys_fuse};
 use self::data::TimeSpec;
 use self::error::{Error, Result, EINVAL, ENOSYS};
 use self::number::*;
@@ -27,7 +28,7 @@ pub mod debug;
 pub mod driver;
 
 /// Fast userspace mutex
-pub mod futex;
+//pub mod futex;
 
 /// Process syscalls
 pub mod process;
@@ -37,6 +38,8 @@ pub mod time;
 
 /// Validate input
 pub mod validate;
+
+mod call;
 
 /// This function is the syscall handler of the kernel, it is composed of an inner function that returns a `Result<usize>`. After the inner function runs, the syscall function calls [`Error::mux`] on it.
 pub fn syscall(
@@ -75,6 +78,16 @@ pub fn syscall(
                 b,
                 validate_slice_mut(c as *mut TimeSpec, 1).map(|time| &mut time[0])?,
             ),
+            SYS_FUSE => {
+                println!("Doing a fuse call");
+                sys_fuse();
+                Ok(0)
+            }
+            SYS_CAST => {
+                println!("Doing a cast call");
+                sys_cast();
+                Ok(0)
+            }
             /*
             SYS_FUTEX => {
                 futex(

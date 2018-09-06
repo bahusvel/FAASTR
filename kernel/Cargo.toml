@@ -19,6 +19,7 @@ spin = "0.4.9"
 serde_derive = "1.0"
 serde-json-core = "0.0.1"
 hashmap_core = "0.1.9"
+sos = { path = "../sos-rs" }
 
 [dependencies.goblin]
 version = "0.0.15"

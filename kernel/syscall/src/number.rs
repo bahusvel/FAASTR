@@ -1,8 +1,10 @@
-pub const SYS_BRK: usize = 45;
-pub const SYS_CLOCK_GETTIME: usize = 265;
-pub const SYS_CLONE: usize = 120;
-pub const SYS_EXECVE: usize = 11;
 pub const SYS_EXIT: usize = 1;
+pub const SYS_WRITE: usize = 2;
+pub const SYS_FUSE: usize = 3;
+pub const SYS_CAST: usize = 4;
+pub const SYS_BRK: usize = 5;
+
+pub const SYS_CLOCK_GETTIME: usize = 265;
 pub const SYS_FUTEX: usize = 240;
 pub const SYS_GETPID: usize = 20;
 pub const SYS_IOPL: usize = 110;
@@ -17,4 +19,3 @@ pub const SYS_SIGACTION: usize = 67;
 pub const SYS_SIGRETURN: usize = 119;
 pub const SYS_WAITPID: usize = 7;
 pub const SYS_YIELD: usize = 158;
-pub const SYS_WRITE: usize = 2;

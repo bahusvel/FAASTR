@@ -14,7 +14,8 @@ pub use self::call::{cast_name, cast_ptr, fuse_name, fuse_ptr};
 pub use self::context::{Context, ContextId, SharedContext, Status, WaitpidKey};
 pub use self::list::ContextList;
 pub use self::load::{
-    cached_module, load_and_cache, FuncPtr, Module, ModuleFuncPtr, SharedModule, INVALID_FUNCTION,
+    cached_module, initfs_module, load_and_cache, FuncPtr, Module, ModuleFuncPtr, SharedModule,
+    INVALID_FUNCTION,
 };
 pub use self::memory::ContextMemory;
 pub use self::switch::{fuse_return, fuse_switch, switch};

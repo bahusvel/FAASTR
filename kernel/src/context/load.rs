@@ -75,6 +75,8 @@ struct Manifest<'a> {
     symbol_table: Vec<SymbolTableEntry<'a>>,
 }
 
+include!(concat!(env!("OUT_DIR"), "/gen.rs"));
+
 fn load_manifest<'i>(elf: &'i elf::Elf) -> Result<'static, Manifest<'i>> {
     let section = elf
         .section_data_by_name()
@@ -168,6 +170,15 @@ pub fn load(data: &[u8]) -> Result<'static, Module> {
         env: FnvHashMap::new(),
         bindings: FnvHashMap::new(),
     })
+}
+
+pub fn initfs_module(name: &str) -> Result<'static, SharedModule> {
+    if let Some(module) = cached_module(name) {
+        return Ok(module);
+    } else {
+        let data = initfs_get_file(name.as_bytes()).ok_or("No such module in initfs")?;
+        load_and_cache(&data)
+    }
 }
 
 pub fn load_and_cache(data: &[u8]) -> Result<'static, SharedModule> {

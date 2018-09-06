@@ -126,8 +126,6 @@ pub fn cpu_count() -> usize {
     CPU_COUNT.load(Ordering::Relaxed)
 }
 
-include!(concat!(env!("OUT_DIR"), "/gen.rs"));
-
 /// This is the kernel entry point for the primary CPU. The arch crate is responsible for calling this
 pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     CPU_ID.store(0, Ordering::SeqCst);
@@ -140,31 +138,13 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     println!("BSP: {:?} {}", pid, cpus);
     println!("Env: {:?}", ::core::str::from_utf8(env));
 
-    println!("Denis was here");
-
-    /*
-    match context::contexts_mut().spawn(userspace_init) {
-        Ok(context_lock) => {
-            let mut context = context_lock.write();
-            context.status = context::Status::Runnable;
-        }
-        Err(err) => {
-            panic!("failed to spawn userspace_init: {:?}", err);
-        }
-    }
-    */
-
-    let module = context::load_and_cache(
-        initfs_get_file(b"/tests/exit").expect("Could not find exit in initfs"),
-    ).expect("Failed to load module");
+    let module = context::initfs_module("call").expect("Failed to load module");
 
     println!("Loaded");
 
-    context::cast_name(module.clone(), "hellohelloexit").expect("Failed to call");
+    context::cast_name(module.clone(), "call").expect("Failed to call");
 
-    context::fuse_name(module.clone(), "hellohelloexit").expect("Failed to call");
-    println!("Exited to caller");
-    context::fuse_name(module, "hellohelloexit").expect("Failed to call");
+    context::fuse_name(module.clone(), "call").expect("Failed to call");
     println!("Exited to caller");
 
     loop {
