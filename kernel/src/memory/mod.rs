@@ -7,7 +7,7 @@ use self::bump::BumpAllocator;
 use self::recycle::RecycleAllocator;
 use self::valloc::Valloc;
 use core::{mem, slice};
-use paging::entry::EntryFlags;
+pub use paging::entry::EntryFlags;
 use paging::{ActivePageTable, PageIter};
 
 use spin::Mutex;
@@ -111,8 +111,7 @@ pub unsafe fn init_noncore() {
             valloc_page.start,
             Frame::containing_address(PhysicalAddress::new(0)),
             EntryFlags::GLOBAL | EntryFlags::NO_EXECUTE,
-        )
-        .flush(&mut active_table);
+        ).flush(&mut active_table);
     mem::forget(valloc_page);
 }
 

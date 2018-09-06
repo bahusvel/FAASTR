@@ -273,6 +273,28 @@ impl ContextMemory {
         })
     }
 
+    pub fn new_kernel(count: usize, flags: EntryFlags) -> Option<(Self, VirtualAddress)> {
+        assert!(count != 0);
+        let mut memory = ContextMemory {
+            valloc_mapping: None,
+            context_address: VirtualAddress::new(0),
+            context_mapped: false,
+            frames: Arc::new(Frames::new(count)?),
+            flags: flags,
+        };
+        let address = memory.map_to_kernel(flags)?;
+        memory.context_address = address;
+        Some((memory, address))
+    }
+
+    pub fn kernel_address(&self) -> Option<VirtualAddress> {
+        Some(self.valloc_mapping.as_ref()?.pages.start_address())
+    }
+
+    pub fn len_bytes(&self) -> usize {
+        self.frames.count * PAGE_SIZE
+    }
+
     pub fn map_to_kernel(&mut self, flags: EntryFlags) -> Option<VirtualAddress> {
         if self.valloc_mapping.is_some() {
             return Some(self.valloc_mapping.as_ref().unwrap().pages.start_address());

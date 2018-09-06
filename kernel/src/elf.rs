@@ -90,6 +90,26 @@ impl<'a> Elf<'a> {
         }
     }
 
+    pub fn lookup_symbol_name(&'a self, index: u32) -> Option<&'a [u8]> {
+        let mut end = index as usize;
+        if self.strtab.is_none() {
+            return None;
+        }
+        while end < self.strtab.unwrap().len() {
+            let b = self.strtab.unwrap()[end];
+            end += 1;
+            if b == 0 {
+                break;
+            }
+        }
+        if end > index as usize {
+            let sym_name = &self.strtab.unwrap()[index as usize..end - 1];
+            Some(sym_name)
+        } else {
+            None
+        }
+    }
+
     pub fn section_data_by_name(&'a self) -> Option<&'a [u8]> {
         for section in self.sections() {
             let name = self.lookup_section_name(section.sh_name)?;

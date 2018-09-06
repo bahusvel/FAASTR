@@ -7,6 +7,7 @@ use alloc::sync::Arc;
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::Ordering;
 use gdt;
+use memory::{EntryFlags, PAGE_SIZE};
 use spin::{Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub use self::call::{cast_name, cast_ptr, fuse_name, fuse_ptr};
@@ -15,6 +16,7 @@ pub use self::list::ContextList;
 pub use self::load::{
     cached_module, load_and_cache, FuncPtr, Module, ModuleFuncPtr, SharedModule, INVALID_FUNCTION,
 };
+pub use self::memory::ContextMemory;
 pub use self::switch::{fuse_return, fuse_switch, switch};
 
 #[path = "arch/x86_64.rs"]
@@ -69,8 +71,13 @@ pub fn init() {
     context.kfx = Some(fx);
     context.status = Status::Running;
     context.cpu_id = Some(::cpu_id());
-    let stack = vec![0; 65_536].into_boxed_slice();
-    unsafe { gdt::set_tss_stack(stack.as_ptr() as usize + stack.len()) };
+
+    let (stack, address) = ContextMemory::new_kernel(
+        65_536 / PAGE_SIZE,
+        EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+    ).expect("Failed to allocate kernel stack");
+
+    unsafe { gdt::set_tss_stack(address.get() as usize + stack.len_bytes()) };
     context.kstack = Some(stack);
 
     let inserted = contexts_mut()

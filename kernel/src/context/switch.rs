@@ -103,7 +103,13 @@ pub unsafe fn switch() -> bool {
         }
         to.status = Status::Running;
         if let Some(ref stack) = to.kstack {
-            gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
+            gdt::set_tss_stack(
+                stack
+                    .kernel_address()
+                    .expect("Kernel stack is not mapped")
+                    .get() as usize
+                    + stack.len_bytes(),
+            );
         }
         CONTEXT_ID.store(to.id, Ordering::SeqCst);
     }
@@ -155,7 +161,13 @@ pub unsafe fn fuse_return(from_context: SharedContext, to_context: SharedContext
             .expect("You must not hold locks to contexts being switched");
         to.status = Status::Running;
         if let Some(ref stack) = to.kstack {
-            gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
+            gdt::set_tss_stack(
+                stack
+                    .kernel_address()
+                    .expect("Kernel stack is not mapped")
+                    .get() as usize
+                    + stack.len_bytes(),
+            );
         }
         CONTEXT_ID.store(to.id, Ordering::SeqCst);
 
@@ -196,7 +208,13 @@ pub unsafe fn fuse_switch(to_context: SharedContext, func: usize) -> () {
 
         // NOTE I'm not so sure about that, switches stack tss.
         if let Some(ref stack) = to.kstack {
-            gdt::set_tss_stack(stack.as_ptr() as usize + stack.len());
+            gdt::set_tss_stack(
+                stack
+                    .kernel_address()
+                    .expect("Kernel stack is not mapped")
+                    .get() as usize
+                    + stack.len_bytes(),
+            );
         }
 
         let from = {

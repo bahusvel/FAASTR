@@ -8,8 +8,7 @@ use context;
 use context::{Context, SharedContext, Status};
 use core::alloc::{GlobalAlloc, Layout};
 use error::*;
-use memory::allocate_frames;
-use paging::entry::EntryFlags;
+use memory::{allocate_frames, EntryFlags, PAGE_SIZE};
 use paging::temporary_page::TemporaryPage;
 use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress};
 
@@ -101,7 +100,7 @@ pub fn spawn(module: SharedModule) -> Result<'static, Context> {
         //println!("Image is alright");
 
         let mut stack = ContextMemory::new(
-            ::USER_STACK_SIZE / 4096,
+            ::USER_STACK_SIZE / PAGE_SIZE,
             VirtualAddress::new(::USER_STACK_OFFSET),
             EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
         ).expect("Failed to allocate stack");
@@ -193,10 +192,13 @@ pub fn cast_ptr(func: FuncPtr) -> Result<'static, SharedContext> {
 fn cast_inner(mut context: Context, func: ModuleFuncPtr) -> Result<'static, SharedContext> {
     context.function = func;
     context.status = Status::New;
-    let stack = vec![0; 65_536].into_boxed_slice();
+    let (stack, address) = ContextMemory::new_kernel(
+        65_536 / PAGE_SIZE,
+        EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+    ).ok_or("Failed to allocate kernel stack")?;
     context
         .arch
-        .set_stack(stack.as_ptr() as usize + stack.len());
+        .set_stack(address.get() as usize + stack.len_bytes());
     context.kstack = Some(stack);
 
     Ok(context::contexts_mut().insert(context)?.clone())

@@ -4,11 +4,13 @@ use alloc::sync::Arc;
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem;
 use core::sync::atomic::Ordering;
+use memory::{EntryFlags, PAGE_SIZE};
 use paging;
 use spin::RwLock;
 
 use super::context::{Context, ContextId, SharedContext};
 use super::load::KERNEL_MODULE;
+use super::memory::ContextMemory;
 use error::*;
 
 /// Context list type
@@ -83,18 +85,20 @@ impl ContextList {
             for b in fx.iter_mut() {
                 *b = 0;
             }
-            let mut stack = vec![0; 65_536].into_boxed_slice();
-            let offset = stack.len() - mem::size_of::<usize>();
+            let (mut stack, address) = ContextMemory::new_kernel(
+                65_536 / PAGE_SIZE,
+                EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+            ).ok_or("Failed to allocate kernel stack")?;
+            let offset = stack.len_bytes() - mem::size_of::<usize>();
             unsafe {
-                let offset = stack.len() - mem::size_of::<usize>();
-                let func_ptr = stack.as_mut_ptr().offset(offset as isize);
+                let func_ptr = (address.get() as *mut usize).offset(offset as isize);
                 *(func_ptr as *mut usize) = func as usize;
+                context.arch.set_stack(func_ptr as usize);
             }
             context
                 .arch
                 .set_page_table(unsafe { paging::ActivePageTable::new().address() });
             context.arch.set_fx(fx.as_ptr() as usize);
-            context.arch.set_stack(stack.as_ptr() as usize + offset);
             context.kfx = Some(fx);
             context.kstack = Some(stack);
         }

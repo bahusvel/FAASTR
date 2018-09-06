@@ -109,7 +109,7 @@ pub struct Context {
     /// Kernel FX - used to store SIMD and FPU registers on context switch
     pub kfx: Option<Box<[u8]>>,
     /// Kernel stack
-    pub kstack: Option<Box<[u8]>>,
+    pub kstack: Option<ContextMemory>,
     // Copy of executable image mappings
     pub image: Vec<ContextMemory>,
     /// User heap

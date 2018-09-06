@@ -150,7 +150,13 @@ macro_rules! fs_push {
 #[rustfmt::skip]
 macro_rules! fs_pop {
     () => {
-        asm!("add rsp, 8"
+        asm!("cmp QWORD PTR [rsp], 0x18
+            je 2f
+            pop fs
+            jmp 3f
+            2:
+            add rsp, 8
+            3:"
         : : : : "intel", "volatile"
         )
     };
