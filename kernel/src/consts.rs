@@ -1,5 +1,32 @@
+///       VM Layout
+/// +-------------------+
+/// | Recursive Mapping | PML4=511
+/// +-------------------+
+/// |    Kernel Image   | PML4=510
+/// +-------------------+
+/// |    Kernel Heap    | PML4=509
+/// +-------------------+
+/// |   Kernel Valloc   | PML4=508
+/// +-------------------+
+/// |     Kernel TLS    | PML4=507
+/// +-------------------+
+///  ===================
+///          Gap
+///  ===================
+///  ===================
+///      Temporaries
+///  ===================
+/// +-------------------+
+/// |     User Stack    | PML4=3 0x0000_0180_0000_0000 - 0x0000_0200_0000_0000
+/// +-------------------+
+/// |    User Grants    | PML4=2 0x0000_0100_0000_0000 - 0x0000_0180_0000_0000
+/// +-------------------+
+/// |     User Heap     | PML4=1 0x0000_0080_0000_0000 - 0x0000_0100_0000_0000
+/// +-------------------+
+/// |     User Image    | PML4=0 0x0000_0000_0000_0000 - 0x0000_0080_0000_0000
+/// +-------------------+
+
 // Because the memory map is so important to not be aliased, it is defined here, in one place
-// The lower 256 PML4 entries are reserved for userspace
 // Each PML4 entry references up to 512 GB of memory
 // The top (511) PML4 is reserved for recursive mapping
 // The second from the top (510) PML4 is reserved for the kernel
@@ -54,18 +81,8 @@ pub const USER_STACK_PML4: usize = (USER_STACK_OFFSET & PML4_MASK) / PML4_SIZE;
 /// Size of user stack
 pub const USER_STACK_SIZE: usize = 1024 * 1024; // 1 MB
 
-/// Offset to user sigstack
-pub const USER_SIGSTACK_OFFSET: usize = USER_STACK_OFFSET + PML4_SIZE;
-pub const USER_SIGSTACK_PML4: usize = (USER_SIGSTACK_OFFSET & PML4_MASK) / PML4_SIZE;
-/// Size of user sigstack
-pub const USER_SIGSTACK_SIZE: usize = 256 * 1024; // 256 KB
-
-/// Offset to user TLS
-pub const USER_TLS_OFFSET: usize = USER_SIGSTACK_OFFSET + PML4_SIZE;
-pub const USER_TLS_PML4: usize = (USER_TLS_OFFSET & PML4_MASK) / PML4_SIZE;
-
 /// Offset to user temporary image (used when cloning)
-pub const USER_TMP_OFFSET: usize = USER_TLS_OFFSET + PML4_SIZE;
+pub const USER_TMP_OFFSET: usize = USER_STACK_OFFSET + PML4_SIZE;
 pub const USER_TMP_PML4: usize = (USER_TMP_OFFSET & PML4_MASK) / PML4_SIZE;
 
 /// Offset to user temporary heap (used when cloning)
@@ -80,14 +97,6 @@ pub const USER_TMP_GRANT_PML4: usize = (USER_TMP_GRANT_OFFSET & PML4_MASK) / PML
 pub const USER_TMP_STACK_OFFSET: usize = USER_TMP_GRANT_OFFSET + PML4_SIZE;
 pub const USER_TMP_STACK_PML4: usize = (USER_TMP_STACK_OFFSET & PML4_MASK) / PML4_SIZE;
 
-/// Offset to user temporary sigstack (used when cloning)
-pub const USER_TMP_SIGSTACK_OFFSET: usize = USER_TMP_STACK_OFFSET + PML4_SIZE;
-pub const USER_TMP_SIGSTACK_PML4: usize = (USER_TMP_SIGSTACK_OFFSET & PML4_MASK) / PML4_SIZE;
-
-/// Offset to user temporary tls (used when cloning)
-pub const USER_TMP_TLS_OFFSET: usize = USER_TMP_SIGSTACK_OFFSET + PML4_SIZE;
-pub const USER_TMP_TLS_PML4: usize = (USER_TMP_TLS_OFFSET & PML4_MASK) / PML4_SIZE;
-
 /// Offset for usage in other temporary pages
-pub const USER_TMP_MISC_OFFSET: usize = USER_TMP_TLS_OFFSET + PML4_SIZE;
+pub const USER_TMP_MISC_OFFSET: usize = USER_TMP_STACK_OFFSET + PML4_SIZE;
 pub const USER_TMP_MISC_PML4: usize = (USER_TMP_MISC_OFFSET & PML4_MASK) / PML4_SIZE;

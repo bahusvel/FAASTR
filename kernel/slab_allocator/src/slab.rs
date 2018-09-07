@@ -1,4 +1,4 @@
-use allocproxy::allocator::{AllocErr, Layout};
+use core::alloc::{AllocErr, Layout};
 
 pub struct Slab {
     block_size: usize,
@@ -29,7 +29,7 @@ impl Slab {
     pub fn allocate(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
         match self.free_block_list.pop() {
             Some(block) => Ok(block.addr() as *mut u8),
-            None => Err(AllocErr::Exhausted { request: layout }),
+            None => Err(AllocErr),
         }
     }
 

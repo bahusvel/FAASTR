@@ -1,6 +1,5 @@
 # Configuration
 ARCH?=x86_64
-INSTALLER_FLAGS?=--cookbook=cookbook
 
 # Per host variables
 UNAME := $(shell uname)

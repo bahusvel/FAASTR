@@ -47,6 +47,7 @@ extern crate linked_list_allocator;
 extern crate serde_json_core;
 #[cfg(feature = "slab")]
 extern crate slab_allocator;
+extern crate sos;
 extern crate spin;
 
 use core::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};

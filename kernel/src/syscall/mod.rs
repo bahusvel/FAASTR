@@ -17,6 +17,7 @@ use self::data::TimeSpec;
 use self::error::{Error, Result, EINVAL, ENOSYS};
 use self::number::*;
 use alloc::str::from_utf8;
+use sos;
 
 use context::ContextId;
 use interrupt::syscall::SyscallStack;
@@ -79,12 +80,16 @@ pub fn syscall(
                 validate_slice_mut(c as *mut TimeSpec, 1).map(|time| &mut time[0])?,
             ),
             SYS_FUSE => {
-                println!("Doing a fuse call");
+                let slice = validate_slice(b as *const u8, c)?;
+                let sos = sos::decode_sos(slice);
+                println!("Doing a fuse call ({:?})", sos);
                 sys_fuse();
                 Ok(0)
             }
             SYS_CAST => {
-                println!("Doing a cast call");
+                let slice = validate_slice(b as *const u8, c)?;
+                let sos = sos::decode_sos(slice);
+                println!("Doing a cast call ({:?})", sos);
                 sys_cast();
                 Ok(0)
             }

@@ -1,0 +1,7 @@
+The system calls are essential operations available to functions, the include function call, return and memory management.
+
+The ABI x86_64 ABI is:
+syscall_number = rax
+sos_pointer = rbx
+sos_length = rcx
+On the return from the system call the kernel will leave rax alone, and set rbx and rcx respectively pointing to return values.

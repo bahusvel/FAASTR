@@ -1,5 +1,4 @@
 use alloc::string::String;
-use alloc::vec::Vec;
 use core::ops::Range;
 
 use super::data::TimeSpec;
@@ -47,21 +46,6 @@ impl Iterator for EscapeDefault {
     }
 }
 
-struct ByteStr<'a>(&'a [u8]);
-
-impl<'a> ::core::fmt::Debug for ByteStr<'a> {
-    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
-        write!(f, "\"")?;
-        for i in self.0 {
-            for ch in escape_default(*i) {
-                write!(f, "{}", ch as char)?;
-            }
-        }
-        write!(f, "\"")?;
-        Ok(())
-    }
-}
-
 pub fn format_call(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize) -> String {
     match a {
         SYS_BRK => format!("brk({:#X})", b),
@@ -69,17 +53,6 @@ pub fn format_call(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize) -
             "clock_gettime({}, {:?})",
             b,
             validate_slice_mut(c as *mut TimeSpec, 1)
-        ),
-        SYS_CLONE => format!("clone({})", b),
-        //TODO: Cleanup, do not allocate
-        SYS_EXECVE => format!(
-            "execve({:?}, {:?})",
-            validate_slice(b as *const u8, c).map(ByteStr),
-            validate_slice(d as *const [usize; 2], e).map(|slice| slice
-                .iter()
-                .map(|a| validate_slice(a[0] as *const u8, a[1])
-                    .ok()
-                    .and_then(|s| ::core::str::from_utf8(s).ok())).collect::<Vec<Option<&str>>>())
         ),
         SYS_EXIT => format!("exit({})", b),
         SYS_FUTEX => format!(
@@ -94,8 +67,6 @@ pub fn format_call(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize) -
         SYS_GETPID => format!("getpid()"),
         SYS_IOPL => format!("iopl({})", b),
         SYS_KILL => format!("kill({}, {})", b, c),
-        SYS_SIGRETURN => format!("sigreturn()"),
-        SYS_SIGACTION => format!("sigaction({}, {:#X}, {:#X}, {:#X})", b, c, d, e),
         SYS_NANOSLEEP => format!(
             "nanosleep({:?}, ({}, {}))",
             validate_slice(b as *const TimeSpec, 1),

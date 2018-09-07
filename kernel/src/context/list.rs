@@ -85,7 +85,7 @@ impl ContextList {
             for b in fx.iter_mut() {
                 *b = 0;
             }
-            let (mut stack, address) = ContextMemory::new_kernel(
+            let (stack, address) = ContextMemory::new_kernel(
                 65_536 / PAGE_SIZE,
                 EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
             ).ok_or("Failed to allocate kernel stack")?;
