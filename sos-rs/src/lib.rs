@@ -1,15 +1,14 @@
 #![no_std]
-#![feature(alloc)]
+#![feature(try_from)]
 #![allow(dead_code)]
 extern crate byteorder;
 
-extern crate alloc;
-
 use self::byteorder::{ByteOrder, NativeEndian};
-use alloc::vec::Vec;
+use core::convert::TryInto;
 use core::str::from_utf8;
 
 const NULL: [u8; 1] = [0];
+const WRONG_TYPE: &str = "Received value is of incorrect type";
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function<'a> {
@@ -17,7 +16,7 @@ pub struct Function<'a> {
     pub name: &'a str,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Value<'a> {
     Int32(i32),
     UInt32(u32),
@@ -29,7 +28,94 @@ pub enum Value<'a> {
     String(&'a str),
     Opaque(&'a [u8]),
     Function(Function<'a>),
-    Embedded(Vec<Value<'a>>),
+    EmbeddedOut(SOSIter<'a>),
+    EmbeddedIn(&'a [Value<'a>]),
+}
+
+impl<'a> Value<'a> {
+    fn type_name(&self) -> &'static str {
+        match self {
+            Value::Int32(_) => stringify!(Value::Int32),
+            Value::UInt32(_) => stringify!(Value::UInt32),
+            Value::Int64(_) => stringify!(Value::Int64),
+            Value::UInt64(_) => stringify!(Value::UInt64),
+            Value::Float(_) => stringify!(Value::Float),
+            Value::Double(_) => stringify!(Value::Double),
+            Value::String(_) => stringify!(Value::String),
+            Value::Error(_) => stringify!(Value::Error),
+            Value::Opaque(_) => stringify!(Value::Opaque),
+            Value::Function(_) => stringify!(Value::Function),
+            Value::EmbeddedOut(_) => stringify!(Value::EmbeddedOut),
+            Value::EmbeddedIn(_) => stringify!(Value::EmbeddedIn),
+        }
+    }
+}
+
+macro_rules! do_list {
+    ($do:ident[$($arg:tt),*]) => {
+        $($do!$arg;)*
+    };
+}
+
+macro_rules! impl_from {
+    ($src:ty, $dst:path) => {
+        impl<'a> From<$src> for Value<'a> {
+            fn from(i: $src) -> Self {
+                $dst(i)
+            }
+        }
+    };
+}
+
+macro_rules! impl_try_into {
+    ($src:path, $dst:ty) => {
+        impl<'a> TryInto<$dst> for Value<'a> {
+            type Error = &'static str;
+            fn try_into(self) -> Result<$dst, Self::Error> {
+                match self {
+                    $src(i) => Ok(i),
+                    _ => Err(concat!("Incorrect type, wanted: ", stringify!($dst))),
+                }
+            }
+        }
+    };
+}
+
+do_list!(impl_from[
+    (i32, Value::Int32),
+    (u32, Value::UInt32),
+    (i64, Value::Int64),
+    (u64, Value::UInt64),
+    (f32, Value::Float),
+    (f64, Value::Double),
+    (&'a str, Value::String),
+    (&'a [u8], Value::Opaque),
+    (Function<'a>, Value::Function),
+    (SOSIter<'a>, Value::EmbeddedOut),
+    (&'a [Value<'a>], Value::EmbeddedIn)
+]);
+
+do_list!(impl_try_into[
+    (Value::Int32, i32),
+    (Value::UInt32, u32),
+    (Value::Int64, i64),
+    (Value::UInt64, u64),
+    (Value::Float, f32),
+    (Value::Double, f64),
+    (Value::Opaque, &'a [u8]),
+    (Value::Function, Function<'a>),
+    (Value::EmbeddedOut, SOSIter<'a>),
+    (Value::EmbeddedIn, &'a [Value<'a>])
+]);
+
+impl<'a> TryInto<&'a str> for Value<'a> {
+    type Error = &'static str;
+    fn try_into(self) -> Result<&'a str, Self::Error> {
+        match self {
+            Value::Error(i) | Value::String(i) => Ok(i),
+            _ => Err(concat!("Incorrect type, wanted: ", "&'a str")),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,9 +152,19 @@ impl CType {
     }
 }
 
-#[allow(non_snake_case)]
+#[macro_export]
+macro_rules! sos {
+    ( $($e:expr) , * ) => {
+        &[
+            $(
+                $e.into()
+            )*
+        ] :: &[Value]
+    };
+}
+
 #[allow(unused_must_use)]
-pub fn EncodeSOS(buf: &mut [u8], values: &[Value]) -> usize {
+pub fn encode_sos(buf: &mut [u8], values: &[Value]) -> usize {
     let mut coffset = 16;
 
     for value in values {
@@ -121,11 +217,16 @@ pub fn EncodeSOS(buf: &mut [u8], values: &[Value]) -> usize {
             &Value::Opaque(ref i) => {
                 length = i.len() as u32;
                 val_type = CType::Opaque;
-                (&mut buf[coffset..i.len()]).copy_from_slice(&i);
+                (&mut buf[coffset..coffset + i.len()]).copy_from_slice(&i);
             }
-            &Value::Embedded(ref i) => {
+            &Value::EmbeddedIn(ref i) => {
                 val_type = CType::Embedded;
-                length = EncodeSOS(&mut buf[coffset..], i) as u32;
+                length = encode_sos(&mut buf[coffset..], i) as u32;
+            }
+            &Value::EmbeddedOut(ref f) => {
+                val_type = CType::Embedded;
+                length = f.buff.len() as u32;
+                (&mut buf[coffset..coffset + length as usize]).copy_from_slice(&f.buff);
             }
             &Value::Function(ref f) => {
                 length = (f.module.len() + f.name.len() + 2) as u32;
@@ -148,52 +249,61 @@ pub fn EncodeSOS(buf: &mut [u8], values: &[Value]) -> usize {
     return coffset;
 }
 
-#[allow(non_snake_case)]
-pub fn DecodeSOS(buff: &[u8]) -> Option<Vec<Value>> {
-    let count = NativeEndian::read_u32(&buff[..4]) as usize;
-    let mut vals: Vec<Value> = Vec::with_capacity(count as usize);
-    let mut coffset = 0;
+#[derive(Debug, Clone)]
+pub struct SOSIter<'a> {
+    buff: &'a [u8],
+    count: usize,
+}
 
-    for _ in 0..count {
-        let val_type = NativeEndian::read_u32(&buff[8 + coffset..8 + coffset + 4]);
-        let val_length = NativeEndian::read_u32(&buff[8 + coffset + 4..8 + coffset + 8]) as usize;
-        let val_data = &buff[8 + coffset + 8..8 + coffset + 8 + val_length];
-        match CType::from_u32(val_type)? {
-            CType::Int32 => vals.push(Value::Int32(NativeEndian::read_i32(&val_data))),
-            CType::UInt32 => vals.push(Value::UInt32(NativeEndian::read_u32(&val_data))),
-            CType::Int64 => vals.push(Value::Int64(NativeEndian::read_i64(&val_data))),
-            CType::UInt64 => vals.push(Value::UInt64(NativeEndian::read_u64(&val_data))),
-            CType::Float => vals.push(Value::Float(NativeEndian::read_f32(&val_data))),
-            CType::Double => vals.push(Value::Double(NativeEndian::read_f64(&val_data))),
-            CType::String => {
-                vals.push(Value::String(
-                    from_utf8(&val_data[..val_length - 1]).unwrap(),
-                ));
-            }
-            CType::Error => {
-                vals.push(Value::Error(
-                    from_utf8(&val_data[..val_length - 1]).unwrap(),
-                ));
-            }
-            CType::Opaque => {
-                let vec = &val_data[..val_length];
-                vals.push(Value::Opaque(vec));
-            }
+impl<'a> SOSIter<'a> {
+    fn count(&self) -> usize {
+        self.count
+    }
+}
+
+pub fn decode_sos(buff: &[u8]) -> SOSIter {
+    let count = NativeEndian::read_u32(&buff[..4]) as usize;
+    SOSIter {
+        count: count,
+        buff: &buff[8..],
+    }
+}
+
+impl<'a> Iterator for SOSIter<'a> {
+    type Item = Value<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buff.len() < 8 {
+            return None;
+        }
+        let val_type = NativeEndian::read_u32(&self.buff[..4]);
+        let val_length = NativeEndian::read_u32(&self.buff[4..8]) as usize;
+        let val_data = &self.buff[8..8 + val_length];
+        let val = match CType::from_u32(val_type)? {
+            CType::Int32 => Value::Int32(NativeEndian::read_i32(&val_data)),
+            CType::UInt32 => Value::UInt32(NativeEndian::read_u32(&val_data)),
+            CType::Int64 => Value::Int64(NativeEndian::read_i64(&val_data)),
+            CType::UInt64 => Value::UInt64(NativeEndian::read_u64(&val_data)),
+            CType::Float => Value::Float(NativeEndian::read_f32(&val_data)),
+            CType::Double => Value::Double(NativeEndian::read_f64(&val_data)),
+            CType::String => Value::String(from_utf8(&val_data[..val_length - 1]).unwrap()),
+            CType::Error => Value::Error(from_utf8(&val_data[..val_length - 1]).unwrap()),
+            CType::Opaque => Value::Opaque(&val_data[..val_length]),
             CType::Function => {
                 let vec = &val_data[..val_length - 1];
                 let pos = vec.iter().position(|&x| x == '\0' as u8).unwrap();
                 let module = from_utf8(&vec[..pos]).unwrap();
                 let name = from_utf8(&vec[pos + 1..]).unwrap();
-                vals.push(Value::Function(Function { module, name }));
+                Value::Function(Function { module, name })
             }
-            CType::Embedded => {
-                vals.push(Value::Embedded(DecodeSOS(&val_data)?));
-            }
-        }
-        coffset += val_length + 8;
+            CType::Embedded => Value::EmbeddedOut(SOSIter {
+                count: NativeEndian::read_u32(&self.buff[..4]) as usize,
+                buff: &val_data[8..],
+            }),
+        };
+        self.buff = &self.buff[val_length + 8..];
+        Some(val)
     }
-
-    return Some(vals);
 }
 
 #[test]
