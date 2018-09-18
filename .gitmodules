@@ -1,6 +1,3 @@
 [submodule "rust"]
 	path = rust
 	url = https://github.com/rust-lang/rust
-[submodule "libc"]
-	path = libc
-	url = https://git.unitecloud.net/bahus.vel/FaaSTR-Libc

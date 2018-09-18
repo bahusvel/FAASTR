@@ -137,16 +137,16 @@ impl CType {
     fn from_u32(i: u32) -> Option<Self> {
         match i {
             0 => Some(CType::Int32),
-            2 => Some(CType::UInt32),
-            3 => Some(CType::Int64),
-            4 => Some(CType::UInt64),
-            5 => Some(CType::Float),
-            6 => Some(CType::Double),
-            7 => Some(CType::Error),
-            8 => Some(CType::String),
-            9 => Some(CType::Opaque),
-            10 => Some(CType::Function),
-            11 => Some(CType::Embedded),
+            1 => Some(CType::UInt32),
+            2 => Some(CType::Int64),
+            3 => Some(CType::UInt64),
+            4 => Some(CType::Float),
+            5 => Some(CType::Double),
+            6 => Some(CType::Error),
+            7 => Some(CType::String),
+            8 => Some(CType::Opaque),
+            9 => Some(CType::Function),
+            10 => Some(CType::Embedded),
             _ => None,
         }
     }
@@ -251,8 +251,8 @@ pub fn encode_sos(buf: &mut [u8], values: &[Value]) -> usize {
 
 #[derive(Debug, Clone)]
 pub struct SOSIter<'a> {
-    buff: &'a [u8],
     count: usize,
+    buff: &'a [u8],
 }
 
 impl<'a> SOSIter<'a> {
@@ -273,11 +273,13 @@ impl<'a> Iterator for SOSIter<'a> {
     type Item = Value<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.buff.len() < 8 {
+        if self.buff.len() <= 8 || self.count == 0 {
             return None;
         }
         let val_type = NativeEndian::read_u32(&self.buff[..4]);
         let val_length = NativeEndian::read_u32(&self.buff[4..8]) as usize;
+        assert!(val_length != 0);
+        assert!(val_length + 8 < self.buff.len());
         let val_data = &self.buff[8..8 + val_length];
         let val = match CType::from_u32(val_type)? {
             CType::Int32 => Value::Int32(NativeEndian::read_i32(&val_data)),
@@ -302,6 +304,7 @@ impl<'a> Iterator for SOSIter<'a> {
             }),
         };
         self.buff = &self.buff[val_length + 8..];
+        self.count -= 1;
         Some(val)
     }
 }

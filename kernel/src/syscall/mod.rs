@@ -59,9 +59,9 @@ pub fn syscall(
         b: usize,
         c: usize,
         d: usize,
-        e: usize,
-        f: usize,
-        bp: usize,
+        _e: usize,
+        _f: usize,
+        _bp: usize,
         stack: &mut SyscallStack,
     ) -> Result<usize> {
         //SYS_* is declared in kernel/syscall/src/number.rs
@@ -82,15 +82,13 @@ pub fn syscall(
             SYS_FUSE => {
                 let slice = validate_slice(b as *const u8, c)?;
                 let sos = sos::decode_sos(slice);
-                println!("Doing a fuse call ({:?})", sos);
-                sys_fuse();
+                sys_fuse(sos);
                 Ok(0)
             }
             SYS_CAST => {
                 let slice = validate_slice(b as *const u8, c)?;
                 let sos = sos::decode_sos(slice);
-                println!("Doing a cast call ({:?})", sos);
-                sys_cast();
+                sys_cast(sos);
                 Ok(0)
             }
             /*

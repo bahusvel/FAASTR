@@ -9,6 +9,6 @@ $(TEST_PREFIX): FORCE
 
 $(TEST_PREFIX)/%: test/%.c build/symbind FORCE
 	make -C libc libc.a
-	gcc -fno-builtin -nostdinc -nostdlib -Ilibc/include -c $< -o $@.o
-	ar rcs $@ $@.o libc/*.o
+	gcc -fno-builtin -nostdinc -nostdlib -fno-stack-protector -Ilibc/include -c $< -o $@.o
+	ld -e 0x0 -o $@ $@.o libc/*.o
 	build/symbind -m $@

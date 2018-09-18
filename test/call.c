@@ -37,10 +37,8 @@ long sys_cast(Values ptr, long length) {
 
 void call() {
   const char *hello = "calling";
-  sys_write((void *)hello, 7);
   char buf[4096] = {0};
   Values vals = (Values)buf;
-  vals->count = 1;
   SetString(vals, hello);
   sys_fuse(vals, 4096);
   sys_exit();
