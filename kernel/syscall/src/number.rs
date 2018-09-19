@@ -3,6 +3,7 @@ pub const SYS_WRITE: usize = 2;
 pub const SYS_FUSE: usize = 3;
 pub const SYS_CAST: usize = 4;
 pub const SYS_BRK: usize = 5;
+pub const SYS_RETURN: usize = 6;
 
 pub const SYS_CLOCK_GETTIME: usize = 265;
 pub const SYS_FUTEX: usize = 240;

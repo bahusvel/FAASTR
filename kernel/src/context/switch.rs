@@ -125,7 +125,15 @@ pub unsafe fn switch() -> bool {
         println!("Switch gonna switch {:?}, {}", to.id, to_user);
         if to_user {
             let sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
-            from.arch.switch_user(&mut to.arch, to.function, sp, 0);
+            from.arch.switch_user(
+                &mut to.arch,
+                to.function,
+                sp,
+                to.args
+                    .as_ref()
+                    .map(|a| a.context_address().get())
+                    .unwrap_or(0),
+            );
         } else {
             from.arch.switch_to(&mut to.arch);
         }
@@ -237,7 +245,15 @@ pub unsafe fn fuse_switch(to_context: SharedContext, func: usize) -> () {
 
     let sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
 
-    (&mut *from_ptr)
-        .arch
-        .switch_user(&mut (&mut *to_ptr).arch, func, sp, 0);
+    let to = &mut *to_ptr;
+
+    (&mut *from_ptr).arch.switch_user(
+        &mut to.arch,
+        func,
+        sp,
+        to.args
+            .as_ref()
+            .map(|a| a.context_address().get())
+            .unwrap_or(0),
+    );
 }

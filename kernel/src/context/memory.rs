@@ -9,9 +9,10 @@ use memory::{
 use paging::entry::EntryFlags;
 use paging::mapper::{Mapper, MapperFlushAll};
 use paging::temporary_page::TemporaryPage;
-use paging::{
-    ActivePageTable, InactivePageTable, Page, PhysicalAddress, VirtualAddress, PAGE_SIZE,
-};
+use paging::{ActivePageTable, InactivePageTable, Page, PhysicalAddress};
+use sos;
+
+pub use paging::{VirtualAddress, PAGE_SIZE};
 
 #[derive(Debug)]
 pub struct Grant {
@@ -521,5 +522,51 @@ impl ContextMemory {
         flush_all.flush(&mut active_table);
 
         Some(memory)
+    }
+}
+
+#[derive(Debug)]
+pub struct ContextValues {
+    memory: Option<ContextMemory>,
+    offset: usize,
+}
+
+impl Deref for ContextValues {
+    type Target = Option<ContextMemory>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.memory
+    }
+}
+
+impl ContextValues {
+    pub fn new_no_memory() -> Self {
+        ContextValues {
+            memory: None,
+            offset: 0,
+        }
+    }
+
+    pub fn set_memory(&mut self, memory: ContextMemory) {
+        self.memory = Some(memory)
+    }
+
+    // TODO this should be Result
+    pub fn append_encode(&mut self, values: &[sos::Value]) -> Option<VirtualAddress> {
+        let length = self.memory.as_ref()?.len_bytes();
+        let need = sos::encoded_len(values);
+        if length - self.offset < need {
+            self.memory = self
+                .memory
+                .take()
+                .unwrap()
+                .resize(align_up!(length + need, PAGE_SIZE) / PAGE_SIZE);
+        }
+        let vaddr =
+            VirtualAddress::new(self.memory.as_ref()?.context_address().get() + self.offset);
+        let slice = &mut self.memory.as_mut()?.as_slice_mut()[self.offset..];
+        self.offset += need;
+        sos::encode_sos(slice, values);
+        Some(vaddr)
     }
 }

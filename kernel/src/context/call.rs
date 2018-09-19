@@ -11,6 +11,7 @@ use error::*;
 use memory::{allocate_frames, EntryFlags, PAGE_SIZE};
 use paging::temporary_page::TemporaryPage;
 use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress};
+use sos;
 
 pub fn spawn(module: SharedModule) -> Result<'static, Context> {
     let mut fx = unsafe {
@@ -99,6 +100,15 @@ pub fn spawn(module: SharedModule) -> Result<'static, Context> {
 
         //println!("Image is alright");
 
+        let mut args = ContextMemory::new(
+            1,
+            VirtualAddress::new(::USER_ARG_OFFSET),
+            EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
+        ).expect("Failed to allocate args");
+        args.map_to_kernel(EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+            .expect("Map failed");
+        args.zero();
+
         let mut stack = ContextMemory::new(
             ::USER_STACK_SIZE / PAGE_SIZE,
             VirtualAddress::new(::USER_STACK_OFFSET),
@@ -127,34 +137,39 @@ pub fn spawn(module: SharedModule) -> Result<'static, Context> {
             for memory in image.iter_mut() {
                 memory.map_context(mapper).ignore();
             }
+            args.map_context(mapper).ignore();
             stack.map_context(mapper).ignore();
             heap.map_context(mapper).ignore();
         });
 
         //println!("Mapping went well too!");
 
-        // TODO zero out stack and heap
         context.stack = Some(stack);
         context.heap = Some(heap);
+        context.args.set_memory(args);
         context.image = image;
     }
 
     Ok(context)
 }
 
-pub fn fuse_name(module: SharedModule, func: &str) -> Result<'static, ()> {
+pub fn fuse_name(module: SharedModule, func: &str, args: &[sos::Value]) -> Result<'static, ()> {
     let f = module.function(func).ok_or("Function not found")?;
     let mut context = spawn(module)?;
     context.name = Some(String::from(func));
-    fuse_inner(context, f)
+    fuse_inner(context, f, args)
 }
 
-pub fn fuse_ptr(func: FuncPtr) -> Result<'static, ()> {
+pub fn fuse_ptr(func: FuncPtr, args: &[sos::Value]) -> Result<'static, ()> {
     let context = spawn(func.0)?;
-    fuse_inner(context, func.1)
+    fuse_inner(context, func.1, args)
 }
 
-fn fuse_inner(mut context: Context, func: ModuleFuncPtr) -> Result<'static, ()> {
+fn fuse_inner(
+    mut context: Context,
+    func: ModuleFuncPtr,
+    args: &[sos::Value],
+) -> Result<'static, ()> {
     context.function = func;
     let inserted = {
         let mut contexts_lock = context::contexts_mut();
@@ -171,6 +186,7 @@ fn fuse_inner(mut context: Context, func: ModuleFuncPtr) -> Result<'static, ()> 
                 .arch
                 .set_stack(address.get() as usize + stack.len_bytes());
             context.kstack = Some(stack);
+            context.args.append_encode(args);
         }
 
         contexts_lock.insert(context)?.clone()
@@ -185,19 +201,27 @@ fn fuse_inner(mut context: Context, func: ModuleFuncPtr) -> Result<'static, ()> 
     Ok(())
 }
 
-pub fn cast_name(module: SharedModule, func: &str) -> Result<'static, SharedContext> {
+pub fn cast_name(
+    module: SharedModule,
+    func: &str,
+    args: &[sos::Value],
+) -> Result<'static, SharedContext> {
     let f = module.function(func).ok_or("Function not found")?;
     let mut context = spawn(module)?;
     context.name = Some(String::from(func));
-    cast_inner(context, f)
+    cast_inner(context, f, args)
 }
 
-pub fn cast_ptr(func: FuncPtr) -> Result<'static, SharedContext> {
+pub fn cast_ptr(func: FuncPtr, args: &[sos::Value]) -> Result<'static, SharedContext> {
     let context = spawn(func.0)?;
-    cast_inner(context, func.1)
+    cast_inner(context, func.1, args)
 }
 
-fn cast_inner(mut context: Context, func: ModuleFuncPtr) -> Result<'static, SharedContext> {
+fn cast_inner(
+    mut context: Context,
+    func: ModuleFuncPtr,
+    args: &[sos::Value],
+) -> Result<'static, SharedContext> {
     context.function = func;
     context.status = Status::New;
     let (stack, address) = ContextMemory::new_kernel(
@@ -208,6 +232,7 @@ fn cast_inner(mut context: Context, func: ModuleFuncPtr) -> Result<'static, Shar
         .arch
         .set_stack(address.get() as usize + stack.len_bytes());
     context.kstack = Some(stack);
+    context.args.append_encode(args);
 
     Ok(context::contexts_mut().insert(context)?.clone())
 }

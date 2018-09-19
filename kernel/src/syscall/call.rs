@@ -2,6 +2,7 @@ use context;
 
 use alloc::vec::Vec;
 use sos;
+use syscall::exit;
 
 pub fn sys_fuse(args: sos::SOSIter) {
     println!(
@@ -10,7 +11,7 @@ pub fn sys_fuse(args: sos::SOSIter) {
     );
     let module = context::initfs_module("exit").expect("Failed to load module");
     println!("Loaded");
-    context::fuse_name(module, "hellohelloexit").expect("Failed to call");
+    context::fuse_name(module, "hellohelloexit", &sos!()).expect("Failed to call");
     println!("Exited to caller");
 }
 
@@ -21,5 +22,20 @@ pub fn sys_cast(args: sos::SOSIter) {
     );
     let module = context::initfs_module("exit").expect("Failed to load module");
     println!("Loaded");
-    context::cast_name(module.clone(), "hellohelloexit").expect("Failed to call");
+    context::cast_name(module.clone(), "hellohelloexit", &sos!()).expect("Failed to call");
+}
+
+pub fn sys_return(values: sos::SOSIter) {
+    {
+        let current_context = context::contexts_mut()
+            .current()
+            .expect("No current context")
+            .clone();
+        println!(
+            "Function {} exited with {:?}",
+            current_context.read().name(),
+            values.collect::<Vec<sos::Value>>()
+        )
+    }
+    exit(0);
 }

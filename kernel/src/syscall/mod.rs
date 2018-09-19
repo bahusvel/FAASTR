@@ -12,14 +12,13 @@ pub use self::process::*;
 pub use self::time::*;
 pub use self::validate::*;
 
-use self::call::{sys_cast, sys_fuse};
-use self::data::TimeSpec;
-use self::error::{Error, Result, EINVAL, ENOSYS};
+use self::call::*;
 use self::number::*;
-use alloc::str::from_utf8;
-use sos;
+use alloc::vec::Vec;
+use context;
+use core::convert::TryInto;
+use sos::{decode_sos, JustError, SOSIter, Value};
 
-use context::ContextId;
 use interrupt::syscall::SyscallStack;
 
 /// Debug
@@ -43,55 +42,97 @@ pub mod validate;
 mod call;
 
 /// This function is the syscall handler of the kernel, it is composed of an inner function that returns a `Result<usize>`. After the inner function runs, the syscall function calls [`Error::mux`] on it.
-pub fn syscall(
-    a: usize,
-    b: usize,
-    c: usize,
-    d: usize,
-    e: usize,
-    f: usize,
-    bp: usize,
-    stack: &mut SyscallStack,
-) -> usize {
+pub fn syscall(a: usize, b: usize, c: usize, stack: &mut SyscallStack) -> usize {
     #[inline(always)]
-    fn inner(
+    fn inner<'a>(
         a: usize,
-        b: usize,
-        c: usize,
-        d: usize,
-        _e: usize,
-        _f: usize,
-        _bp: usize,
+        mut args: SOSIter,
         stack: &mut SyscallStack,
-    ) -> Result<usize> {
+    ) -> Result<Vec<Value<'a>>, JustError<'static>> {
         //SYS_* is declared in kernel/syscall/src/number.rs
         match a {
-            SYS_YIELD => sched_yield(),
-            SYS_NANOSLEEP => nanosleep(
-                validate_slice(b as *const TimeSpec, 1).map(|req| &req[0])?,
-                if c == 0 {
-                    None
-                } else {
-                    Some(validate_slice_mut(c as *mut TimeSpec, 1).map(|rem| &mut rem[0])?)
-                },
-            ),
-            SYS_CLOCK_GETTIME => clock_gettime(
-                b,
-                validate_slice_mut(c as *mut TimeSpec, 1).map(|time| &mut time[0])?,
-            ),
             SYS_FUSE => {
-                let slice = validate_slice(b as *const u8, c)?;
-                let sos = sos::decode_sos(slice);
-                sys_fuse(sos);
-                Ok(0)
+                sys_fuse(args);
+                Ok(Vec::new())
             }
             SYS_CAST => {
-                let slice = validate_slice(b as *const u8, c)?;
-                let sos = sos::decode_sos(slice);
-                sys_cast(sos);
-                Ok(0)
+                sys_cast(args);
+                Ok(Vec::new())
+            }
+            SYS_RETURN => {
+                sys_return(args);
+                Ok(Vec::new())
+            }
+            SYS_WRITE => {
+                let string: &str = args
+                    .next()
+                    .ok_or(JustError::new("First argument to write must be String"))?
+                    .try_into()
+                    .map_err(|e| JustError::new(e))?;
+
+                let contexts = ::context::contexts();
+                if let Some(context_lock) = contexts.current() {
+                    let context = context_lock.read();
+                    println!("{}: {}", context.name(), string);
+                }
+                Ok(vec![Value::UInt64(string.len() as u64)])
             }
             /*
+            SYS_YIELD => {
+                sched_yield().map_err(|_| JustError::new("Scheduler operation failed"))?;
+                Ok(Vec::new())
+            }
+            SYS_NANOSLEEP => {
+                nanosleep(
+                    validate_slice(b as *const TimeSpec, 1).map(|req| &req[0])?,
+                    if c == 0 {
+                        None
+                    } else {
+                        Some(validate_slice_mut(c as *mut TimeSpec, 1).map(|rem| &mut rem[0])?)
+                    },
+                ).map_err(|_| JustError::new("Time operation failed"))?;
+                Ok(Vec::new())
+            }
+            SYS_CLOCK_GETTIME => {
+                clock_gettime(
+                    b,
+                    validate_slice_mut(c as *mut TimeSpec, 1).map(|time| &mut time[0])?,
+                ).map_err(|_| JustError::new("Time operation failed"))?;
+                Ok(Vec::new())
+            }
+            SYS_BRK => {
+                brk(b).map_err(|_| JustError::new("Memory operation failed"))?;
+                Ok(Vec::new())
+            }
+            SYS_EXIT => {
+                exit((b & 0xFF) << 8);
+            }
+            SYS_KILL => kill(ContextId::from(b), c),
+            SYS_WAITPID => waitpid(ContextId::from(b), c, d).map(ContextId::into),
+            SYS_IOPL => {
+                iopl(b, stack).map_err(|_| JustError::new("IOPL failed"))?;
+                Ok(Vec::new())
+            }
+            SYS_PHYSALLOC => {
+                physalloc(b).map_err(|_| JustError::new("Memory operation failed"))?;
+                Ok(Vec::new())
+            }
+            SYS_PHYSFREE => {
+                physfree(b, c).map_err(|_| JustError::new("Memory operation failed"))?;
+                Ok(Vec::new())
+            }
+            SYS_PHYSMAP => {
+                physmap(b, c, d).map_err(|_| JustError::new("Memory operation failed"))?;
+                Ok(Vec::new())
+            }
+            SYS_PHYSUNMAP => {
+                physunmap(b).map_err(|_| JustError::new("Memory operation failed"))?;
+                Ok(Vec::new())
+            }
+            SYS_VIRTTOPHYS => {
+                virttophys(b).map_err(|_| JustError::new("Memory operation failed"))?;
+                Ok(Vec::new())
+            }s
             SYS_FUTEX => {
                 futex(
                     validate_slice_mut(b as *mut i32, 1).map(
@@ -104,96 +145,29 @@ pub fn syscall(
                 )
             }
             */
-            SYS_WRITE => {
-                let slice = validate_slice(b as *const u8, c)?;
-                let string = from_utf8(slice).map_err(|_| Error::new(EINVAL))?;
-                let contexts = ::context::contexts();
-                if let Some(context_lock) = contexts.current() {
-                    let context = context_lock.read();
-                    println!("{}: {}", context.name(), string);
-                }
-                Ok(10)
-            }
-            SYS_BRK => brk(b),
-            SYS_GETPID => getpid().map(ContextId::into),
-            SYS_EXIT => exit((b & 0xFF) << 8),
-            //SYS_KILL => kill(ContextId::from(b), c),
-            //SYS_WAITPID => waitpid(ContextId::from(b), c, d).map(ContextId::into),
-            SYS_IOPL => iopl(b, stack),
-            SYS_PHYSALLOC => physalloc(b),
-            SYS_PHYSFREE => physfree(b, c),
-            SYS_PHYSMAP => physmap(b, c, d),
-            SYS_PHYSUNMAP => physunmap(b),
-            SYS_VIRTTOPHYS => virttophys(b),
-            _ => Err(Error::new(ENOSYS)),
+            _ => Err(JustError::new("Invalid system call")),
         }
     }
 
-    /*
-    let debug = {
-        let contexts = ::context::contexts();
-        if let Some(context_lock) = contexts.current() {
-            let context = context_lock.read();
-            let name_raw = context.name.lock();
-            let name = unsafe { ::core::str::from_utf8_unchecked(&name_raw) };
-            if name == "file:/bin/cargo" || name == "file:/bin/rustc" {
-                if (a == SYS_WRITE || a == SYS_FSYNC) && (b == 1 || b == 2) {
-                    false
-                } else {
-                    true
-                }
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-/// This function
+    let slice = validate_slice(b as *const u8, c);
+    let result = if slice.is_err() {
+        Err(slice.unwrap_err())
+    } else {
+        let sos = decode_sos(slice.unwrap());
+        inner(a, sos, stack)
     };
 
-    if debug {
-        let contexts = ::context::contexts();
-        if let Some(context_lock) = contexts.current() {
-            let context = context_lock.read();
-            print!("{} ({}): ", unsafe { ::core::str::from_utf8_unchecked(&context.name.lock()) }, context.id.into());
-        }
+    let current_lock = context::contexts_mut()
+        .current()
+        .expect("No current context")
+        .clone();
+    let mut current_context = current_lock.write();
 
-/// This function
-        println!("{}", debug::format_call(a, b, c, d, e, f));
-    }
+    let offset = if result.is_err() {
+        current_context.args.append_encode(&result.unwrap_err())
+    } else {
+        current_context.args.append_encode(&result.unwrap())
+    };
 
-
-    */
-
-    // The next lines set the current syscall in the context struct, then once the inner() function
-    // completes, we set the current syscall to none.
-    //
-    // When the code below falls out of scope it will release the lock
-    // see the spin crate for details
-
-    let result = inner(a, b, c, d, e, f, bp, stack);
-
-    /*
-    if debug {
-        let contexts = ::context::contexts();
-        if let Some(context_lock) = contexts.current() {
-            let context = context_lock.read();
-            print!("{} ({}): ", unsafe { ::core::str::from_utf8_unchecked(&context.name.lock()) }, context.id.into());
-        }
-
-        print!("{} = ", debug::format_call(a, b, c, d, e, f));
-
-        match result {
-            Ok(ref ok) => {
-                println!("Ok({} ({:#X}))", ok, ok);
-            },
-            Err(ref err) => {
-                println!("Err({} ({:#X}))", err, err.errno);
-            }
-        }
-    }
-    */
-
-    // errormux turns Result<usize> into -errno
-    Error::mux(result)
+    offset.expect("Failed to encode syscall return value").get()
 }

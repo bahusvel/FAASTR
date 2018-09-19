@@ -5,6 +5,7 @@ extern crate byteorder;
 
 use self::byteorder::{ByteOrder, NativeEndian};
 use core::convert::TryInto;
+use core::ops::Deref;
 use core::str::from_utf8;
 
 const NULL: [u8; 1] = [0];
@@ -32,6 +33,23 @@ pub enum Value<'a> {
     EmbeddedIn(&'a [Value<'a>]),
 }
 
+#[derive(Debug)]
+pub struct JustError<'a>([Value<'a>; 1]);
+
+impl<'a> Deref for JustError<'a> {
+    type Target = [Value<'a>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> JustError<'a> {
+    pub fn new(error: &'a str) -> Self {
+        JustError([Value::Error(error); 1])
+    }
+}
+
 impl<'a> Value<'a> {
     fn type_name(&self) -> &'static str {
         match self {
@@ -47,6 +65,18 @@ impl<'a> Value<'a> {
             Value::Function(_) => stringify!(Value::Function),
             Value::EmbeddedOut(_) => stringify!(Value::EmbeddedOut),
             Value::EmbeddedIn(_) => stringify!(Value::EmbeddedIn),
+        }
+    }
+    fn encoded_size(&self) -> usize {
+        match self {
+            &Value::Int32(_) | &Value::UInt32(_) | &Value::Float(_) => 4,
+            &Value::Int64(_) | &Value::UInt64(_) | &Value::Double(_) => 8,
+            &Value::String(ref i) => i.len() + 1,
+            &Value::Error(ref i) => i.len() + 1,
+            &Value::Opaque(ref i) => i.len(),
+            &Value::EmbeddedIn(ref i) => encoded_len(i),
+            &Value::EmbeddedOut(ref f) => f.buff.len(),
+            &Value::Function(ref f) => f.module.len() + f.name.len() + 2,
         }
     }
 }
@@ -120,6 +150,7 @@ impl<'a> TryInto<&'a str> for Value<'a> {
 
 #[derive(Debug, PartialEq)]
 enum CType {
+    Invalid,
     Int32,
     UInt32,
     Int64,
@@ -136,30 +167,39 @@ enum CType {
 impl CType {
     fn from_u32(i: u32) -> Option<Self> {
         match i {
-            0 => Some(CType::Int32),
-            1 => Some(CType::UInt32),
-            2 => Some(CType::Int64),
-            3 => Some(CType::UInt64),
-            4 => Some(CType::Float),
-            5 => Some(CType::Double),
-            6 => Some(CType::Error),
-            7 => Some(CType::String),
-            8 => Some(CType::Opaque),
-            9 => Some(CType::Function),
-            10 => Some(CType::Embedded),
+            0 => Some(CType::Invalid),
+            1 => Some(CType::Int32),
+            2 => Some(CType::UInt32),
+            3 => Some(CType::Int64),
+            4 => Some(CType::UInt64),
+            5 => Some(CType::Float),
+            6 => Some(CType::Double),
+            7 => Some(CType::Error),
+            8 => Some(CType::String),
+            9 => Some(CType::Opaque),
+            10 => Some(CType::Function),
+            11 => Some(CType::Embedded),
             _ => None,
         }
     }
 }
 
+pub fn encoded_len(values: &[Value]) -> usize {
+    let mut len = values.len() * 8 + 8;
+    for value in values {
+        len += value.encoded_size();
+    }
+    len
+}
+
 #[macro_export]
 macro_rules! sos {
     ( $($e:expr) , * ) => {
-        &[
+        [
             $(
                 $e.into()
             )*
-        ] :: &[Value]
+        ]
     };
 }
 
@@ -282,6 +322,7 @@ impl<'a> Iterator for SOSIter<'a> {
         assert!(val_length + 8 < self.buff.len());
         let val_data = &self.buff[8..8 + val_length];
         let val = match CType::from_u32(val_type)? {
+            CType::Invalid => return None,
             CType::Int32 => Value::Int32(NativeEndian::read_i32(&val_data)),
             CType::UInt32 => Value::UInt32(NativeEndian::read_u32(&val_data)),
             CType::Int64 => Value::Int64(NativeEndian::read_i64(&val_data)),

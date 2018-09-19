@@ -8,7 +8,7 @@ use spin::{Mutex, RwLock};
 
 use super::{ModuleFuncPtr, SharedModule, INVALID_FUNCTION};
 use context::arch;
-use context::memory::{ContextMemory, Grant};
+use context::memory::{ContextMemory, ContextValues, Grant};
 use device;
 use sync::WaitMap;
 
@@ -112,6 +112,8 @@ pub struct Context {
     pub kstack: Option<ContextMemory>,
     // Copy of executable image mappings
     pub image: Vec<ContextMemory>,
+    // Memory area where kernel places arguments to userspace
+    pub args: ContextValues,
     /// User heap
     pub heap: Option<ContextMemory>,
     /// User stack
@@ -141,6 +143,7 @@ impl Context {
             kfx: None,
             kstack: None,
             image: Vec::new(),
+            args: ContextValues::new_no_memory(),
             heap: None,
             stack: None,
             grants: Vec::new(),

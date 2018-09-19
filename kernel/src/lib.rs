@@ -27,6 +27,7 @@
 #![feature(ptr_internals)]
 #![feature(thread_local)]
 #![feature(tool_attributes)]
+#![feature(try_from)]
 #![no_std]
 
 pub extern crate x86;
@@ -47,6 +48,7 @@ extern crate linked_list_allocator;
 extern crate serde_json_core;
 #[cfg(feature = "slab")]
 extern crate slab_allocator;
+#[macro_use]
 extern crate sos;
 extern crate spin;
 
@@ -143,9 +145,9 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
 
     println!("Loaded");
 
-    context::cast_name(module.clone(), "call").expect("Failed to call");
+    context::cast_name(module.clone(), "passthrough", &sos!("hello")).expect("Failed to call");
 
-    context::fuse_name(module.clone(), "call").expect("Failed to call");
+    context::fuse_name(module.clone(), "call", &sos!()).expect("Failed to call");
     println!("Exited to caller");
 
     loop {

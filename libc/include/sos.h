@@ -13,6 +13,7 @@
 #define IPC_OUTPUT (IPC_INPUT + MAX_MSG_SIZE)
 
 typedef enum {
+	Invalid,
 	Int32,
 	UInt32,
 	Int64,

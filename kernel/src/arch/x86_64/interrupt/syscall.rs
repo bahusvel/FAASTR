@@ -5,12 +5,7 @@ use syscall;
 pub unsafe extern "C" fn syscall() {
     #[inline(never)]
     unsafe fn inner(stack: &mut SyscallStack) -> usize {
-        let rbp;
-        asm!("" : "={rbp}"(rbp) : : : "intel", "volatile");
-
-        syscall::syscall(
-            stack.rax, stack.rbx, stack.rcx, stack.rdx, stack.rsi, stack.rdi, rbp, stack,
-        )
+        syscall::syscall(stack.rax, stack.rbx, stack.rcx, stack)
     }
 
     // Push scratch registers

@@ -192,7 +192,6 @@ impl Context {
              mov es, r14d
              mov fs, r15d
              mov gs, r14d
-             xor rax, rax
              xor rbx, rbx
              xor rcx, rcx
              xor rdx, rdx
@@ -212,7 +211,8 @@ impl Context {
              iretq"
              : // No output because it never returns
              :   "{r14}"(gdt::GDT_USER_DATA << 3 | 3), // Data segment
-                 "{r15}"(gdt::GDT_NULL << 3 | 3) // TLS segment
+                 "{r15}"(gdt::GDT_NULL << 3 | 3), // TLS segment
+                 "{rax}"(arg)
              : // No clobbers because it never returns
              : "intel", "volatile");
         unreachable!();

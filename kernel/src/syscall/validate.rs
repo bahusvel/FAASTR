@@ -2,11 +2,15 @@ use core::{mem, slice};
 
 use paging::entry::EntryFlags;
 use paging::{ActivePageTable, Page, VirtualAddress};
-use syscall::error::*;
+use sos::JustError;
 
-fn validate(address: usize, size: usize, flags: EntryFlags) -> Result<()> {
-    let end_offset = size.checked_sub(1).ok_or(Error::new(EFAULT))?;
-    let end_address = address.checked_add(end_offset).ok_or(Error::new(EFAULT))?;
+fn validate(address: usize, size: usize, flags: EntryFlags) -> Result<(), JustError<'static>> {
+    let end_offset = size
+        .checked_sub(1)
+        .ok_or(JustError::new("Invalid memory address"))?;
+    let end_address = address
+        .checked_add(end_offset)
+        .ok_or(JustError::new("Invalid memory address"))?;
 
     let active_table = unsafe { ActivePageTable::new() };
 
@@ -16,11 +20,11 @@ fn validate(address: usize, size: usize, flags: EntryFlags) -> Result<()> {
         if let Some(page_flags) = active_table.translate_page_flags(page) {
             if !page_flags.contains(flags) {
                 //println!("{:X}: Not {:?}", page.start_address().get(), flags);
-                return Err(Error::new(EFAULT));
+                return Err(JustError::new("Invalid memory address"));
             }
         } else {
             //println!("{:X}: Not found", page.start_address().get());
-            return Err(Error::new(EFAULT));
+            return Err(JustError::new("Invalid memory address"));
         }
     }
 
@@ -28,7 +32,7 @@ fn validate(address: usize, size: usize, flags: EntryFlags) -> Result<()> {
 }
 
 /// Convert a pointer and length to slice, if valid
-pub fn validate_slice<T>(ptr: *const T, len: usize) -> Result<&'static [T]> {
+pub fn validate_slice<T>(ptr: *const T, len: usize) -> Result<&'static [T], JustError<'static>> {
     if len == 0 {
         Ok(&[])
     } else {
@@ -42,7 +46,10 @@ pub fn validate_slice<T>(ptr: *const T, len: usize) -> Result<&'static [T]> {
 }
 
 /// Convert a pointer and length to slice, if valid
-pub fn validate_slice_mut<T>(ptr: *mut T, len: usize) -> Result<&'static mut [T]> {
+pub fn validate_slice_mut<T>(
+    ptr: *mut T,
+    len: usize,
+) -> Result<&'static mut [T], JustError<'static>> {
     if len == 0 {
         Ok(&mut [])
     } else {
