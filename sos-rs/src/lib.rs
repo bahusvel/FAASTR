@@ -1,20 +1,38 @@
 #![no_std]
 #![feature(try_from)]
+#![feature(alloc)]
 #![allow(dead_code)]
+extern crate alloc;
 extern crate byteorder;
 
 use self::byteorder::{ByteOrder, NativeEndian};
+#[cfg(feature = "alloc")]
+use alloc::borrow::Cow;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use core::convert::TryInto;
+use core::fmt::Debug;
 use core::ops::Deref;
 use core::str::from_utf8;
 
 const NULL: [u8; 1] = [0];
 const WRONG_TYPE: &str = "Received value is of incorrect type";
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct Function<'a> {
     pub module: &'a str,
     pub name: &'a str,
+}
+
+impl<'a> Debug for Function<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "{}::{}", self.module, self.name)
+    }
+}
+
+pub trait SOS {
+    fn encode(&self, &mut [u8]) -> usize;
+    fn encoded_len(&self) -> usize;
 }
 
 #[derive(Debug, Clone)]
@@ -29,8 +47,8 @@ pub enum Value<'a> {
     String(&'a str),
     Opaque(&'a [u8]),
     Function(Function<'a>),
-    EmbeddedOut(SOSIter<'a>),
-    EmbeddedIn(&'a [Value<'a>]),
+    EmbeddedOut(DecodeIter<'a>),
+    EmbeddedIn(ReferencedValues<'a>),
 }
 
 #[derive(Debug)]
@@ -47,6 +65,85 @@ impl<'a> Deref for JustError<'a> {
 impl<'a> JustError<'a> {
     pub fn new(error: &'a str) -> Self {
         JustError([Value::Error(error); 1])
+    }
+}
+
+impl<'a> SOS for JustError<'a> {
+    fn encoded_len(&self) -> usize {
+        ReferencedValues(&self.0).encoded_len()
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> usize {
+        ReferencedValues(&self.0).encode(buf)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ReferencedValues<'a>(pub &'a [Value<'a>]);
+
+impl<'a> SOS for ReferencedValues<'a> {
+    fn encode(&self, buf: &mut [u8]) -> usize {
+        encode_sos(buf, self.0)
+    }
+
+    fn encoded_len(&self) -> usize {
+        encoded_len(self.0)
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Debug)]
+pub struct EncodedValues<'a>(Cow<'a, [u8]>);
+
+impl<'a> Deref for EncodedValues<'a> {
+    type Target = Cow<'a, [u8]>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> EncodedValues<'a> {
+    pub fn decode(&self) -> DecodeIter {
+        decode_sos(&self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> From<&'a [u8]> for EncodedValues<'a> {
+    fn from(buf: &'a [u8]) -> Self {
+        EncodedValues(Cow::Borrowed(buf))
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> From<Vec<u8>> for EncodedValues<'a> {
+    fn from(buf: Vec<u8>) -> Self {
+        EncodedValues(Cow::Owned(buf))
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a, 'b> From<ReferencedValues<'b>> for EncodedValues<'a> {
+    fn from(vals: ReferencedValues<'b>) -> Self {
+        let want = vals.encoded_len();
+        let mut vec = Vec::with_capacity(want);
+        unsafe { vec.set_len(want) };
+        vals.encode(&mut vec);
+        EncodedValues(Cow::Owned(vec))
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> SOS for EncodedValues<'a> {
+    fn encode(&self, buf: &mut [u8]) -> usize {
+        buf.copy_from_slice(&self);
+        self.len()
+    }
+
+    fn encoded_len(&self) -> usize {
+        self.len()
     }
 }
 
@@ -74,7 +171,7 @@ impl<'a> Value<'a> {
             &Value::String(ref i) => i.len() + 1,
             &Value::Error(ref i) => i.len() + 1,
             &Value::Opaque(ref i) => i.len(),
-            &Value::EmbeddedIn(ref i) => encoded_len(i),
+            &Value::EmbeddedIn(ref i) => i.encoded_len(),
             &Value::EmbeddedOut(ref f) => f.buff.len(),
             &Value::Function(ref f) => f.module.len() + f.name.len() + 2,
         }
@@ -121,8 +218,8 @@ do_list!(impl_from[
     (&'a str, Value::String),
     (&'a [u8], Value::Opaque),
     (Function<'a>, Value::Function),
-    (SOSIter<'a>, Value::EmbeddedOut),
-    (&'a [Value<'a>], Value::EmbeddedIn)
+    (DecodeIter<'a>, Value::EmbeddedOut),
+    (ReferencedValues<'a>, Value::EmbeddedIn)
 ]);
 
 do_list!(impl_try_into[
@@ -134,8 +231,8 @@ do_list!(impl_try_into[
     (Value::Double, f64),
     (Value::Opaque, &'a [u8]),
     (Value::Function, Function<'a>),
-    (Value::EmbeddedOut, SOSIter<'a>),
-    (Value::EmbeddedIn, &'a [Value<'a>])
+    (Value::EmbeddedOut, DecodeIter<'a>),
+    (Value::EmbeddedIn, ReferencedValues<'a>)
 ]);
 
 impl<'a> TryInto<&'a str> for Value<'a> {
@@ -195,16 +292,19 @@ pub fn encoded_len(values: &[Value]) -> usize {
 #[macro_export]
 macro_rules! sos {
     ( $($e:expr) , * ) => {
-        [
+        {
+        use sos::ReferencedValues;
+        ReferencedValues(&[
             $(
                 $e.into()
             )*
-        ]
+        ])
+        }
     };
 }
 
 #[allow(unused_must_use)]
-pub fn encode_sos(buf: &mut [u8], values: &[Value]) -> usize {
+fn encode_sos(buf: &mut [u8], values: &[Value]) -> usize {
     let mut coffset = 16;
 
     for value in values {
@@ -261,12 +361,11 @@ pub fn encode_sos(buf: &mut [u8], values: &[Value]) -> usize {
             }
             &Value::EmbeddedIn(ref i) => {
                 val_type = CType::Embedded;
-                length = encode_sos(&mut buf[coffset..], i) as u32;
+                length = i.encode(&mut buf[coffset..]) as u32;
             }
             &Value::EmbeddedOut(ref f) => {
                 val_type = CType::Embedded;
-                length = f.buff.len() as u32;
-                (&mut buf[coffset..coffset + length as usize]).copy_from_slice(&f.buff);
+                length = f.encode(&mut buf[coffset..]) as u32;
             }
             &Value::Function(ref f) => {
                 length = (f.module.len() + f.name.len() + 2) as u32;
@@ -290,26 +389,38 @@ pub fn encode_sos(buf: &mut [u8], values: &[Value]) -> usize {
 }
 
 #[derive(Debug, Clone)]
-pub struct SOSIter<'a> {
+pub struct DecodeIter<'a> {
     count: usize,
     buff: &'a [u8],
 }
 
-impl<'a> SOSIter<'a> {
+impl<'a> SOS for DecodeIter<'a> {
+    fn encoded_len(&self) -> usize {
+        self.buff.len() + 8
+    }
+    fn encode(&self, buf: &mut [u8]) -> usize {
+        NativeEndian::write_u32(&mut buf[..4], self.count as u32);
+        NativeEndian::write_u32(&mut buf[4..8], 0);
+        buf[8..].copy_from_slice(&self.buff);
+        self.encoded_len()
+    }
+}
+
+impl<'a> DecodeIter<'a> {
     fn count(&self) -> usize {
         self.count
     }
 }
 
-pub fn decode_sos(buff: &[u8]) -> SOSIter {
+fn decode_sos(buff: &[u8]) -> DecodeIter {
     let count = NativeEndian::read_u32(&buff[..4]) as usize;
-    SOSIter {
+    DecodeIter {
         count: count,
         buff: &buff[8..],
     }
 }
 
-impl<'a> Iterator for SOSIter<'a> {
+impl<'a> Iterator for DecodeIter<'a> {
     type Item = Value<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -339,7 +450,7 @@ impl<'a> Iterator for SOSIter<'a> {
                 let name = from_utf8(&vec[pos + 1..]).unwrap();
                 Value::Function(Function { module, name })
             }
-            CType::Embedded => Value::EmbeddedOut(SOSIter {
+            CType::Embedded => Value::EmbeddedOut(DecodeIter {
                 count: NativeEndian::read_u32(&self.buff[..4]) as usize,
                 buff: &val_data[8..],
             }),

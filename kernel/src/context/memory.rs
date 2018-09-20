@@ -10,7 +10,7 @@ use paging::entry::EntryFlags;
 use paging::mapper::{Mapper, MapperFlushAll};
 use paging::temporary_page::TemporaryPage;
 use paging::{ActivePageTable, InactivePageTable, Page, PhysicalAddress};
-use sos;
+use sos::SOS;
 
 pub use paging::{VirtualAddress, PAGE_SIZE};
 
@@ -552,9 +552,9 @@ impl ContextValues {
     }
 
     // TODO this should be Result
-    pub fn append_encode(&mut self, values: &[sos::Value]) -> Option<VirtualAddress> {
+    pub fn append_encode<T: SOS>(&mut self, values: &T) -> Option<VirtualAddress> {
         let length = self.memory.as_ref()?.len_bytes();
-        let need = sos::encoded_len(values);
+        let need = values.encoded_len();
         if length - self.offset < need {
             self.memory = self
                 .memory
@@ -564,9 +564,9 @@ impl ContextValues {
         }
         let vaddr =
             VirtualAddress::new(self.memory.as_ref()?.context_address().get() + self.offset);
-        let slice = &mut self.memory.as_mut()?.as_slice_mut()[self.offset..];
+        let slice = &mut self.memory.as_mut()?.as_slice_mut()[self.offset..self.offset + need];
         self.offset += need;
-        sos::encode_sos(slice, values);
+        values.encode(slice);
         Some(vaddr)
     }
 }

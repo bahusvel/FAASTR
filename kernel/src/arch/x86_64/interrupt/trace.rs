@@ -111,11 +111,38 @@ pub unsafe fn symbol_trace(addr: usize) {
                         print!("::");
                     }
 
+                    macro_rules! match_symbol {
+                        ($symbol:expr) => {
+                            sym_name[i..].len() > $symbol.len() && if &sym_name
+                                [i..i + $symbol.len()]
+                                == $symbol
+                            {
+                                i += $symbol.len();
+                                true
+                            } else {
+                                false
+                            }
+                        };
+                    }
+
                     // Print name string
                     let end = i + len;
                     while i < sym_name.len() && i < end {
-                        print!("{}", sym_name[i] as char);
-                        i += 1;
+                        if match_symbol!(b"$LT$") {
+                            print!("<");
+                        } else if match_symbol!(b"$GT$") {
+                            print!(">");
+                        } else if match_symbol!(b"$u27$") {
+                            print!("'");
+                        } else if match_symbol!(b"$u20$") {
+                            print!(" ");
+                        } else if match_symbol!(b"..") {
+                            print!("::");
+                        } else {
+                            print!("{}", sym_name[i] as char);
+                            i += 1;
+                            continue;
+                        }
                     }
                 }
             } else {

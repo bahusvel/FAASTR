@@ -17,7 +17,7 @@ use self::number::*;
 use alloc::vec::Vec;
 use context;
 use core::convert::TryInto;
-use sos::{decode_sos, JustError, SOSIter, Value};
+use sos::{EncodedValues, JustError, Value};
 
 use interrupt::syscall::SyscallStack;
 
@@ -44,27 +44,22 @@ mod call;
 /// This function is the syscall handler of the kernel, it is composed of an inner function that returns a `Result<usize>`. After the inner function runs, the syscall function calls [`Error::mux`] on it.
 pub fn syscall(a: usize, b: usize, c: usize, stack: &mut SyscallStack) -> usize {
     #[inline(always)]
-    fn inner<'a>(
+    fn inner<'a, 'b>(
         a: usize,
-        mut args: SOSIter,
-        stack: &mut SyscallStack,
-    ) -> Result<Vec<Value<'a>>, JustError<'static>> {
+        args: EncodedValues<'a>,
+        _stack: &mut SyscallStack,
+    ) -> Result<(usize), JustError<'static>> {
         //SYS_* is declared in kernel/syscall/src/number.rs
-        match a {
-            SYS_FUSE => {
-                sys_fuse(args);
-                Ok(Vec::new())
-            }
+        let ret = match a {
+            SYS_FUSE => sys_fuse(args),
             SYS_CAST => {
-                sys_cast(args);
-                Ok(Vec::new())
+                sys_cast(args)?;
+                Ok(EncodedValues::from(Vec::new()))
             }
-            SYS_RETURN => {
-                sys_return(args);
-                Ok(Vec::new())
-            }
+            SYS_RETURN => sys_return(args),
             SYS_WRITE => {
                 let string: &str = args
+                    .decode()
                     .next()
                     .ok_or(JustError::new("First argument to write must be String"))?
                     .try_into()
@@ -75,7 +70,7 @@ pub fn syscall(a: usize, b: usize, c: usize, stack: &mut SyscallStack) -> usize 
                     let context = context_lock.read();
                     println!("{}: {}", context.name(), string);
                 }
-                Ok(vec![Value::UInt64(string.len() as u64)])
+                Ok(sos![Value::UInt64(string.len() as u64)].into())
             }
             /*
             SYS_YIELD => {
@@ -132,7 +127,7 @@ pub fn syscall(a: usize, b: usize, c: usize, stack: &mut SyscallStack) -> usize 
             SYS_VIRTTOPHYS => {
                 virttophys(b).map_err(|_| JustError::new("Memory operation failed"))?;
                 Ok(Vec::new())
-            }s
+            }
             SYS_FUTEX => {
                 futex(
                     validate_slice_mut(b as *mut i32, 1).map(
@@ -146,14 +141,24 @@ pub fn syscall(a: usize, b: usize, c: usize, stack: &mut SyscallStack) -> usize 
             }
             */
             _ => Err(JustError::new("Invalid system call")),
-        }
+        }?;
+        let current_lock = context::contexts_mut()
+            .current()
+            .expect("No current context")
+            .clone();
+        let mut current_context = current_lock.write();
+        Ok(current_context
+            .args
+            .append_encode(&ret)
+            .expect("Failed to encode syscall return value")
+            .get())
     }
 
     let slice = validate_slice(b as *const u8, c);
     let result = if slice.is_err() {
         Err(slice.unwrap_err())
     } else {
-        let sos = decode_sos(slice.unwrap());
+        let sos = EncodedValues::from(slice.unwrap());
         inner(a, sos, stack)
     };
 
@@ -163,11 +168,13 @@ pub fn syscall(a: usize, b: usize, c: usize, stack: &mut SyscallStack) -> usize 
         .clone();
     let mut current_context = current_lock.write();
 
-    let offset = if result.is_err() {
-        current_context.args.append_encode(&result.unwrap_err())
+    if result.is_err() {
+        current_context
+            .args
+            .append_encode(&result.unwrap_err())
+            .expect("Failed to encode syscall return value")
+            .get()
     } else {
-        current_context.args.append_encode(&result.unwrap())
-    };
-
-    offset.expect("Failed to encode syscall return value").get()
+        result.unwrap()
+    }
 }

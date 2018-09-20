@@ -101,7 +101,7 @@ void sos_set_data(Values vals, Type type, unsigned int size, const void *data);
 
 #define SetError(vals_ptr, str) sos_set_data(vals_ptr, Error, strlen(str) + 1, str)
 
-void SetFunction(const char *module, const char *func);
+void SetFunction(Values ptr, const char *module, const char *func);
 
 #define ReturnValues() return vals_ipc
 #define Call(module, name) sys_fuse(module, name, vals_ipc)

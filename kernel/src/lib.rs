@@ -28,6 +28,7 @@
 #![feature(thread_local)]
 #![feature(tool_attributes)]
 #![feature(try_from)]
+#![feature(slice_patterns)]
 #![no_std]
 
 pub extern crate x86;

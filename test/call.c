@@ -57,11 +57,9 @@ void call() {
   const char *hello = "calling";
   char buf[4096] = {0};
   Values vals = (Values)buf;
+  SetFunction(vals, "call", "passthrough");
   SetString(vals, hello);
-
-  Values write_ret = sys_write(vals, 4096);
-  AddValue(vals, UInt64, GetValue(write_ret, UInt64));
-
+  
   sys_fuse(vals, 4096);
   sys_return(vals, 4096);
 }

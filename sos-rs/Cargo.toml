@@ -3,5 +3,8 @@ name = "sos"
 version = "0.1.0"
 authors = ["Denis Lavrov <bahus.vel@gmail.com>"]
 
+[features]
+alloc = []
+
 [dependencies]
 byteorder = { version = "1.1.0", default-features = false }

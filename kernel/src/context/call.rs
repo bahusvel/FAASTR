@@ -11,7 +11,7 @@ use error::*;
 use memory::{allocate_frames, EntryFlags, PAGE_SIZE};
 use paging::temporary_page::TemporaryPage;
 use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress};
-use sos;
+use sos::{EncodedValues, SOS};
 
 pub fn spawn(module: SharedModule) -> Result<'static, Context> {
     let mut fx = unsafe {
@@ -153,23 +153,27 @@ pub fn spawn(module: SharedModule) -> Result<'static, Context> {
     Ok(context)
 }
 
-pub fn fuse_name(module: SharedModule, func: &str, args: &[sos::Value]) -> Result<'static, ()> {
+pub fn fuse_name<'a, S: SOS>(
+    module: SharedModule,
+    func: &str,
+    args: &S,
+) -> Result<'static, EncodedValues<'a>> {
     let f = module.function(func).ok_or("Function not found")?;
     let mut context = spawn(module)?;
     context.name = Some(String::from(func));
     fuse_inner(context, f, args)
 }
 
-pub fn fuse_ptr(func: FuncPtr, args: &[sos::Value]) -> Result<'static, ()> {
+pub fn fuse_ptr<'a, S: SOS>(func: FuncPtr, args: &S) -> Result<'static, EncodedValues<'a>> {
     let context = spawn(func.0)?;
     fuse_inner(context, func.1, args)
 }
 
-fn fuse_inner(
+fn fuse_inner<'a, S: SOS>(
     mut context: Context,
     func: ModuleFuncPtr,
-    args: &[sos::Value],
-) -> Result<'static, ()> {
+    args: &S,
+) -> Result<'static, EncodedValues<'a>> {
     context.function = func;
     let inserted = {
         let mut contexts_lock = context::contexts_mut();
@@ -198,13 +202,13 @@ fn fuse_inner(
     };
 
     // NOTE it may seem counter intuitive but fuse will return here!
-    Ok(())
+    Ok(EncodedValues::from(Vec::new()))
 }
 
-pub fn cast_name(
+pub fn cast_name<S: SOS>(
     module: SharedModule,
     func: &str,
-    args: &[sos::Value],
+    args: &S,
 ) -> Result<'static, SharedContext> {
     let f = module.function(func).ok_or("Function not found")?;
     let mut context = spawn(module)?;
@@ -212,15 +216,15 @@ pub fn cast_name(
     cast_inner(context, f, args)
 }
 
-pub fn cast_ptr(func: FuncPtr, args: &[sos::Value]) -> Result<'static, SharedContext> {
+pub fn cast_ptr<S: SOS>(func: FuncPtr, args: &S) -> Result<'static, SharedContext> {
     let context = spawn(func.0)?;
     cast_inner(context, func.1, args)
 }
 
-fn cast_inner(
+fn cast_inner<S: SOS>(
     mut context: Context,
     func: ModuleFuncPtr,
-    args: &[sos::Value],
+    args: &S,
 ) -> Result<'static, SharedContext> {
     context.function = func;
     context.status = Status::New;

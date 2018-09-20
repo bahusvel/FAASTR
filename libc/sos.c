@@ -17,19 +17,19 @@ void sos_set_data(Values vals, Type type, unsigned int size, const void *data) {
 	vals->current_offset += size + sizeof(Value);
 }
 
-void SetFunction(const char *module, const char *func) {
+void SetFunction(Values ptr, const char *module, const char *func) {
 	long len_module = strlen(module);
 	long len_func = strlen(func);
 	unsigned int str_size = len_module + len_func + 2;
 
-	Value *val = _Get_At_Offset_(vals_ipc);
+	Value *val = _Get_At_Offset_(ptr);
 	*val = (Value){Function, str_size};
 
 	memcpy(val->data, module, len_module + 1);
 	memcpy(val->data + len_module + 1, func, len_func + 1);
 
-	vals_ipc->count++;
-	vals_ipc->current_offset += str_size + sizeof(Value);
+	ptr->count++;
+	ptr->current_offset += str_size + sizeof(Value);
 }
 
 void GetFunction(Values vals_ptr, char **module, char **func) {
