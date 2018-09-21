@@ -11,6 +11,7 @@ use paging::mapper::{Mapper, MapperFlushAll};
 use paging::temporary_page::TemporaryPage;
 use paging::{ActivePageTable, InactivePageTable, Page, PhysicalAddress};
 use sos::SOS;
+use syscall;
 
 pub use paging::{VirtualAddress, PAGE_SIZE};
 
@@ -517,9 +518,11 @@ impl ContextMemory {
             }
         }
 
-        let mut flush_all = self.unmap_context(&mut active_table);
-        flush_all.consume_flush_all(memory.map_context(&mut active_table));
-        flush_all.flush(&mut active_table);
+        self.unmap_context(&mut active_table)
+            .flush(&mut active_table);
+        memory
+            .map_context(&mut active_table)
+            .flush(&mut active_table);
 
         Some(memory)
     }
@@ -555,18 +558,26 @@ impl ContextValues {
     pub fn append_encode<T: SOS>(&mut self, values: &T) -> Option<VirtualAddress> {
         let length = self.memory.as_ref()?.len_bytes();
         let need = values.encoded_len();
+        //println!("Need {}, length {}, offset {}", need, length, self.offset);
         if length - self.offset < need {
-            self.memory = self
-                .memory
-                .take()
-                .unwrap()
-                .resize(align_up!(length + need, PAGE_SIZE) / PAGE_SIZE);
+            self.memory = Some(
+                self.memory
+                    .take()
+                    .unwrap()
+                    .resize(align_up!(length + need, PAGE_SIZE) / PAGE_SIZE)
+                    .expect("Resize failed"),
+            );
         }
         let vaddr =
             VirtualAddress::new(self.memory.as_ref()?.context_address().get() + self.offset);
         let slice = &mut self.memory.as_mut()?.as_slice_mut()[self.offset..self.offset + need];
         self.offset += need;
         values.encode(slice);
+
+        // if syscall::validate::validate(vaddr.get(), need, EntryFlags::USER_ACCESSIBLE).is_err() {
+        //     println!("User memory is not mapped");
+        // }
+
         Some(vaddr)
     }
 }

@@ -119,10 +119,11 @@ pub fn load(data: &[u8]) -> Result<'static, Module> {
         let vaddr = segment.p_vaddr - voff;
         let size = segment.p_memsz as usize + voff as usize;
         let num_pages = ((size + 4095) & (!4095)) / 4096;
-        println!(
-            "Segment voff={}, vaddr={}, size={}, num_pages={}",
-            voff, vaddr, size, num_pages
-        );
+
+        // println!(
+        //     "Segment voff={}, vaddr={}, size={}, num_pages={}",
+        //     voff, vaddr, size, num_pages
+        // );
 
         let mut flags = EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE;
 

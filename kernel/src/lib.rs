@@ -144,12 +144,9 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
 
     let module = context::initfs_module("call").expect("Failed to load module");
 
-    println!("Loaded");
-
     context::cast_name(module.clone(), "passthrough", &sos!("hello")).expect("Failed to call");
 
     context::fuse_name(module.clone(), "call", &sos!()).expect("Failed to call");
-    println!("Exited to caller");
 
     loop {
         unsafe {

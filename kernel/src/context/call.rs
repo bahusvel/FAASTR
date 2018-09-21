@@ -74,8 +74,6 @@ pub fn spawn(module: SharedModule) -> Result<'static, Context> {
             }
         });
 
-        println!("Fine until here");
-
         // Parts of the image that are readonly
         let readonly = module
             .image
@@ -201,8 +199,16 @@ fn fuse_inner<'a, S: SOS>(
         context::fuse_switch(inserted.clone(), func)
     };
 
-    // NOTE it may seem counter intuitive but fuse will return here!
-    Ok(EncodedValues::from(Vec::new()))
+    // NOTE fuse will return here!
+    let returned_values = inserted
+        .write()
+        .result
+        .take()
+        .expect("Callee did not return");
+
+    // TODO reap context as it is no longer useful
+
+    Ok(EncodedValues::from(returned_values))
 }
 
 pub fn cast_name<S: SOS>(

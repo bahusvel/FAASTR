@@ -81,7 +81,7 @@ pub fn exit(status: usize) -> ! {
 
         let (pid, parent) = {
             let mut context = current_context.write();
-            context.status = Status::Exited(status);
+            context.status = Status::Exited;
             (context.id, context.ret_link.take())
         };
 

@@ -10,6 +10,7 @@ use super::{ModuleFuncPtr, SharedModule, INVALID_FUNCTION};
 use context::arch;
 use context::memory::{ContextMemory, ContextValues, Grant};
 use device;
+use sos::OwnedEncodedValues;
 use sync::WaitMap;
 
 pub type SharedContext = Arc<RwLock<Context>>;
@@ -26,8 +27,7 @@ pub enum Status {
     Runnable,
     Blocked,
     New,
-    Stopped(usize),
-    Exited(usize),
+    Exited,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -116,6 +116,8 @@ pub struct Context {
     pub args: ContextValues,
     /// User heap
     pub heap: Option<ContextMemory>,
+    /// Return Value
+    pub result: Option<OwnedEncodedValues>,
     /// User stack
     pub stack: Option<ContextMemory>,
     /// User grants
@@ -145,6 +147,7 @@ impl Context {
             image: Vec::new(),
             args: ContextValues::new_no_memory(),
             heap: None,
+            result: None,
             stack: None,
             grants: Vec::new(),
             function: INVALID_FUNCTION,

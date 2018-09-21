@@ -25,14 +25,14 @@ Values sys_write(Values ptr, long len) {
   return (Values)r;
 }
 
-long sys_fuse(Values ptr, long length) {
+Values sys_fuse(Values ptr, long length) {
   long r;
   asm("mov $0x3, %%rax;"
       "int $0x80"
       : "=a"(r)
       : "b"(ptr), "c"(length)
       );
-  return r;
+  return (Values)r;
 }
 
 long sys_cast(Values ptr, long length) {
@@ -59,7 +59,9 @@ void call() {
   Values vals = (Values)buf;
   SetFunction(vals, "call", "passthrough");
   SetString(vals, hello);
-  
-  sys_fuse(vals, 4096);
-  sys_return(vals, 4096);
+
+  Values pass_out = sys_fuse(vals, 4096);
+  SetString(vals, GetString(pass_out)); 
+
+  sys_return(pass_out, 4096);
 }

@@ -4,7 +4,7 @@ use paging::entry::EntryFlags;
 use paging::{ActivePageTable, Page, VirtualAddress};
 use sos::JustError;
 
-fn validate(address: usize, size: usize, flags: EntryFlags) -> Result<(), JustError<'static>> {
+pub fn validate(address: usize, size: usize, flags: EntryFlags) -> Result<(), JustError<'static>> {
     let end_offset = size
         .checked_sub(1)
         .ok_or(JustError::new("Invalid memory address"))?;
@@ -19,11 +19,16 @@ fn validate(address: usize, size: usize, flags: EntryFlags) -> Result<(), JustEr
     for page in Page::range_inclusive(start_page, end_page) {
         if let Some(page_flags) = active_table.translate_page_flags(page) {
             if !page_flags.contains(flags) {
-                //println!("{:X}: Not {:?}", page.start_address().get(), flags);
+                println!(
+                    "{:X}: Not {:?} but is {:?}",
+                    page.start_address().get(),
+                    flags,
+                    page_flags
+                );
                 return Err(JustError::new("Invalid memory address"));
             }
         } else {
-            //println!("{:X}: Not found", page.start_address().get());
+            println!("{:X}: Not found", page.start_address().get());
             return Err(JustError::new("Invalid memory address"));
         }
     }

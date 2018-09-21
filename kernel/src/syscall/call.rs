@@ -18,10 +18,14 @@ pub fn sys_fuse(args: EncodedValues) -> Result<EncodedValues, JustError<'static>
     println!("Doing a fuse call {:?}({:?})", function, fargs);
 
     let module = context::initfs_module(function.module).map_err(|e| JustError::new(e))?;
-    println!("Loaded");
 
     let ret = context::fuse_name(module, function.name, &iter).map_err(|e| JustError::new(e))?;
-    println!("Exited to caller");
+
+    println!(
+        "Returning from a fuse call {:?} -> {:?}",
+        function,
+        ret.decode().collect::<Vec<Value>>()
+    );
 
     Ok(ret)
 }
@@ -40,7 +44,6 @@ pub fn sys_cast(args: EncodedValues) -> Result<(), JustError<'static>> {
 
     println!("Doing a cast call {:?}({:?})", function, fargs);
     let module = context::initfs_module(function.module).map_err(|e| JustError::new(e))?;
-    println!("Loaded");
 
     context::cast_name(module, function.name, &iter).map_err(|e| JustError::new(e))?;
 
@@ -53,11 +56,14 @@ pub fn sys_return(values: EncodedValues) -> ! {
             .current()
             .expect("No current context")
             .clone();
+        let mut context_lock = current_context.write();
         println!(
             "Function {} exited with {:?}",
-            current_context.read().name(),
+            context_lock.name(),
             values.decode().collect::<Vec<Value>>()
-        )
+        );
+        context_lock.result = Some(values.into_owned());
     }
+
     exit(0);
 }

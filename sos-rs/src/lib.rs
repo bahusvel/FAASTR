@@ -92,6 +92,9 @@ impl<'a> SOS for ReferencedValues<'a> {
 }
 
 #[cfg(feature = "alloc")]
+pub type OwnedEncodedValues = Vec<u8>;
+
+#[cfg(feature = "alloc")]
 #[derive(Debug)]
 pub struct EncodedValues<'a>(Cow<'a, [u8]>);
 
@@ -107,6 +110,9 @@ impl<'a> Deref for EncodedValues<'a> {
 impl<'a> EncodedValues<'a> {
     pub fn decode(&self) -> DecodeIter {
         decode_sos(&self)
+    }
+    pub fn into_owned(self) -> OwnedEncodedValues {
+        self.0.into_owned()
     }
 }
 

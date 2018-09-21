@@ -175,6 +175,7 @@ pub fn syscall(a: usize, b: usize, c: usize, stack: &mut SyscallStack) -> usize 
             .expect("Failed to encode syscall return value")
             .get()
     } else {
+        println!("Exit addr {:x}", result.as_ref().unwrap());
         result.unwrap()
     }
 }
