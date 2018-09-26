@@ -13,7 +13,6 @@ const DID: u16 = 0x1110;
 const BUFFER_SIZE: usize = 1024 * 1024;
 
 type ProtoMsgLen = u32;
-type ProtoCallTicket = u32;
 
 lazy_static! {
     static ref BUFFER_PTR: usize = {
@@ -41,7 +40,7 @@ lazy_static! {
     };
 }
 
-pub fn get_pci_header() -> Option<PciHeader> {
+fn get_pci_header() -> Option<PciHeader> {
     let pci = Pci::new();
     for bus in pci.buses() {
         for dev in bus.devs() {
@@ -66,7 +65,7 @@ pub fn get_pci_header() -> Option<PciHeader> {
     None
 }
 
-pub fn ivsrpc_fuse<'a, T: SOS>(args: T) -> Result<EncodedValues<'a>, JustError<'static>> {
+pub fn ivsrpc_fuse<'a, T: SOS>(_args: T) -> Result<EncodedValues<'a>, JustError<'static>> {
     // NOTE careful here, it may not be ok to borrow from ring buffer for a long time
     Err(JustError::new("Not implemented"))
 }
@@ -87,5 +86,3 @@ pub fn send_call() {
     let mut lock = PRODUCER.lock();
     lock.write(hello.len()).copy_from_slice(hello.as_bytes());
 }
-
-pub fn init_buffer() {}
