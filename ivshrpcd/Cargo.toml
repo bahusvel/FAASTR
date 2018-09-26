@@ -1,0 +1,8 @@
+[package]
+name = "ivshrpcd"
+version = "0.1.0"
+authors = ["Denis Lavrov <bahus.vel@gmail.com>"]
+
+[dependencies]
+memmap = "0.7.0"
+ringbuf = { path = "../ringbuf" }

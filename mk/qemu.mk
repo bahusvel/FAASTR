@@ -3,6 +3,8 @@ QEMUFLAGS=-serial mon:stdio -d cpu_reset -d guest_errors -d int
 QEMUFLAGS+=-smp 4 -m 2048
 net=no
 vga=no
+IVSHMEM=yes
+IVSHMEM_SIZE=$(shell echo $$(( 1024 * 1024 )) )
 ifeq ($(iommu),yes)
 	QEMUFLAGS+=-machine q35,iommu=on
 else
@@ -30,6 +32,10 @@ ifeq ($(UNAME),Linux)
 	ifneq ($(kvm),no)
 		QEMUFLAGS+=-enable-kvm -cpu host
 	endif
+endif
+ifeq ($(IVSHMEM), yes)
+	QEMUFLAGS+= -object memory-backend-file,size=$(IVSHMEM_SIZE),share,mem-path=/dev/shm/ivshmem,id=hostmem
+	QEMUFLAGS+= -device ivshmem-plain,memdev=hostmem
 endif
 #,int,pcall
 #-device intel-iommu
