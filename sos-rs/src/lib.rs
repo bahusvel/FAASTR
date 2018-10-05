@@ -9,6 +9,8 @@ use self::byteorder::{ByteOrder, NativeEndian};
 #[cfg(feature = "alloc")]
 use alloc::borrow::Cow;
 #[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::fmt::Debug;
@@ -18,10 +20,39 @@ use core::str::from_utf8;
 const NULL: [u8; 1] = [0];
 const WRONG_TYPE: &str = "Received value is of incorrect type";
 
-#[derive(PartialEq, Clone)]
+type SyntacticFunc<'a> = (&'a str, &'a str);
+
+#[derive(PartialEq, Eq, Clone, Hash)]
 pub struct Function<'a> {
     pub module: &'a str,
     pub name: &'a str,
+}
+
+#[cfg(feature = "alloc")]
+#[derive(PartialEq, Eq, Clone, Hash)]
+pub struct OwnedFunction {
+    pub module: String,
+    pub name: String,
+}
+
+#[cfg(feature = "alloc")]
+impl OwnedFunction {
+    pub fn new(module: &str, name: &str) -> Self {
+        OwnedFunction {
+            module: String::from(module),
+            name: String::from(name),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> From<Function<'a>> for OwnedFunction {
+    fn from(f: Function<'a>) -> Self {
+        OwnedFunction {
+            module: String::from(f.module),
+            name: String::from(f.name),
+        }
+    }
 }
 
 impl<'a> Debug for Function<'a> {
@@ -228,6 +259,15 @@ do_list!(impl_from[
     (ReferencedValues<'a>, Value::EmbeddedIn)
 ]);
 
+impl<'a> From<(&'a str, &'a str)> for Value<'a> {
+    fn from(i: (&'a str, &'a str)) -> Self {
+        Value::Function(Function {
+            module: i.0,
+            name: i.1,
+        })
+    }
+}
+
 do_list!(impl_try_into[
     (Value::Int32, i32),
     (Value::UInt32, u32),
@@ -297,12 +337,12 @@ pub fn encoded_len(values: &[Value]) -> usize {
 
 #[macro_export]
 macro_rules! sos {
-    ( $($e:expr) , * ) => {
+    ( $( $e:expr ),* ) => {
         {
         use sos::ReferencedValues;
         ReferencedValues(&[
             $(
-                $e.into()
+                $e.into(),
             )*
         ])
         }
@@ -378,10 +418,9 @@ fn encode_sos(buf: &mut [u8], values: &[Value]) -> usize {
                 val_type = CType::Function;
                 (&mut buf[coffset..coffset + f.module.len()]).copy_from_slice(f.module.as_bytes());
                 buf[coffset + f.module.len()] = 0;
-                (&mut buf
-                    [coffset + 1 + f.module.len()..coffset + 1 + f.module.len() + f.name.len()])
+                (&mut buf[coffset + 1 + f.module.len()..coffset + length as usize - 1])
                     .copy_from_slice(f.name.as_bytes());
-                buf[coffset + 1 + length as usize - 1] = 0;
+                buf[coffset + length as usize - 1] = 0;
             }
         }
         NativeEndian::write_u32(&mut buf[coffset - 8..coffset - 4], val_type as u32);
@@ -436,7 +475,7 @@ impl<'a> Iterator for DecodeIter<'a> {
         let val_type = NativeEndian::read_u32(&self.buff[..4]);
         let val_length = NativeEndian::read_u32(&self.buff[4..8]) as usize;
         assert!(val_length != 0);
-        assert!(val_length + 8 < self.buff.len());
+        assert!(val_length + 8 <= self.buff.len());
         let val_data = &self.buff[8..8 + val_length];
         let val = match CType::from_u32(val_type)? {
             CType::Invalid => return None,

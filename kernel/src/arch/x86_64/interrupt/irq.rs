@@ -91,6 +91,7 @@ interrupt!(rtc, {
 });
 
 interrupt!(pci1, {
+    println!("ivshmem interrupt hit");
     trigger(9);
 });
 

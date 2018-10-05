@@ -6,3 +6,9 @@ authors = ["Denis Lavrov <bahus.vel@gmail.com>"]
 [dependencies]
 memmap = "0.7.0"
 ringbuf = { path = "../ringbuf" }
+sos = { path = "../sos-rs",  features = ["alloc"] }
+lazy_static = "1.1.0"
+fnv = "1.0.6"
+byteorder = { version = "1.1.0", default-features=false }
+either = { version = "1.5.0", default-features=false }
+nix = "0.11.0"

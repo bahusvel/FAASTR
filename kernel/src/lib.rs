@@ -44,6 +44,7 @@ extern crate bitflags;
 #[macro_use]
 extern crate serde_derive;
 extern crate byteorder;
+extern crate either;
 extern crate goblin;
 extern crate hashmap_core;
 extern crate linked_list_allocator;
@@ -144,7 +145,19 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
     println!("BSP: {:?} {}", pid, cpus);
     println!("Env: {:?}", ::core::str::from_utf8(env));
 
-    devices::ivshmem::send_call();
+    {
+        use alloc::vec::Vec;
+        use devices::ivshmem;
+        use sos::Value;
+        ivshmem::init();
+        ivshmem::ivshrpc_cast(sos!(("host", "hello"), "Hello"));
+        let result = ivshmem::ivshrpc_fuse(sos!(("host", "hello_fuse"), "Fuse"));
+
+        println!(
+            "Received from host {:?}",
+            result.decode().collect::<Vec<Value>>()
+        );
+    }
 
     let module = context::initfs_module("call").expect("Failed to load module");
 

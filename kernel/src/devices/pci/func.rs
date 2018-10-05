@@ -22,6 +22,7 @@ pub trait ConfigReader {
     unsafe fn read_u32(&self, offset: u8) -> u32;
 }
 
+#[derive(Clone)]
 pub struct PciFunc<'pci> {
     pub dev: &'pci PciDev<'pci>,
     pub num: u8,

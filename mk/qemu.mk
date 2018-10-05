@@ -34,8 +34,8 @@ ifeq ($(UNAME),Linux)
 	endif
 endif
 ifeq ($(IVSHMEM), yes)
-	QEMUFLAGS+= -object memory-backend-file,size=$(IVSHMEM_SIZE),share,mem-path=/dev/shm/ivshmem,id=hostmem
-	QEMUFLAGS+= -device ivshmem-plain,memdev=hostmem
+	QEMUFLAGS+= -chardev socket,path=/tmp/ivshmem_socket,id=ivshmem_socket
+	QEMUFLAGS+= -device ivshmem-doorbell,chardev=ivshmem_socket,vectors=1
 endif
 #,int,pcall
 #-device intel-iommu

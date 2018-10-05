@@ -22,6 +22,7 @@ hashmap_core = "0.1.9"
 sos = { path = "../sos-rs", features = ["alloc"] }
 byteorder = { version = "1.1.0", default-features = false }
 ringbuf = { path = "../ringbuf" }
+either = { version = "1.5.0", default-features=false }
 
 [dependencies.goblin]
 version = "0.0.15"

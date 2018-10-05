@@ -275,8 +275,8 @@ impl<'b, 'a: 'b> Consumer<'a> {
 
     pub fn read(&'b mut self, n: usize) -> ReadHandle<'b, 'a> {
         let current_head = self.0.head.load(Ordering::Relaxed);
-
-        while self.0.shadow_tail.get().wrapping_sub(current_head) <= n {
+        //Am I off by one, or am I not? Hmm... use <= if I'm not
+        while self.0.shadow_tail.get().wrapping_sub(current_head) < n {
             self.0.shadow_tail.set(self.0.tail.load(Ordering::Acquire));
         }
 
