@@ -1,6 +1,8 @@
 use alloc::vec::Vec;
+use arch;
 use byteorder::{ByteOrder, NativeEndian};
 use core::mem;
+use core::ptr::write_volatile;
 use core::slice;
 use devices::pci::{Pci, PciBar, PciClass, PciHeader, PciHeaderError};
 use ringbuf::{Consumer, Producer};
@@ -118,7 +120,12 @@ struct PciDev {
 unsafe fn pci_intx(dev: &PciDev, enable: bool) {
     const PCI_COMMAND: u16 = 0x04;
     const PCI_COMMAND_INTX_DISABLE: u32 = 0x400;
+
     let pci = Pci::new();
+
+    let mut data = pci.read(dev.bus, dev.dev, dev.func, 0x04);
+    data |= 7;
+    pci.write(dev.bus, dev.dev, dev.func, 0x04, data);
     let command = pci.read(dev.bus, dev.dev, dev.func, PCI_COMMAND as u8);
 
     let new = if enable {
@@ -177,14 +184,43 @@ unsafe fn pci_msix_map_region(dev: &PciDev, num_entries: u32, msix_cap: u32) -> 
 
 unsafe fn pci_msix_program_entry(base: usize, nr: u32) {
     const PCI_MSIX_ENTRY_CTRL_MASKBIT: u32 = 1;
-    const PCI_MSIX_ENTRY_VECTOR_CTRL: u32 = 12;
     const PCI_MSIX_ENTRY_SIZE: u32 = 16;
-    let addr = base + (nr * PCI_MSIX_ENTRY_SIZE + PCI_MSIX_ENTRY_VECTOR_CTRL) as usize;
-    let mut mask_bits = *(addr as *mut u32);
+    const MSI_ADDRESS_BASE: u64 = 0xfee00000;
+    const MSI_DESTINATION_ID_SHIFT: u64 = 12;
+    const MSI_NO_REDIRECTION: u64 = 0x00000000;
+    const MSI_DESTINATION_MODE_PHYSICAL: u64 = 0x00000000;
+    const MSI_TRIGGER_MODE_EDGE: u32 = 0x00000000;
+    const MSI_DELIVERY_MODE_FIXED: u32 = 0x00000000;
+    const ARCH_INTERRUPT_BASE: u32 = 0x20;
+    const MSI_DELIVERY_MODE_NMI: u32 = 0x00000400;
 
-    mask_bits |= PCI_MSIX_ENTRY_CTRL_MASKBIT;
+    let apic = &arch::device::local_apic::LOCAL_APIC;
 
-    *(addr as *mut u32) = mask_bits;
+    let cpu_apic_id = apic.id() as u64;
+    println!("Apic id: {}", cpu_apic_id);
+
+    let vector = 9 + nr;
+
+    let address = MSI_ADDRESS_BASE
+        | (cpu_apic_id << MSI_DESTINATION_ID_SHIFT)
+        | MSI_NO_REDIRECTION
+        | MSI_DESTINATION_MODE_PHYSICAL;
+
+    let data = MSI_TRIGGER_MODE_EDGE | MSI_DELIVERY_MODE_FIXED | (vector + ARCH_INTERRUPT_BASE);
+
+    let entry = (base + (nr * PCI_MSIX_ENTRY_SIZE) as usize) as *mut u32;
+    write_volatile(
+        entry.offset(3),
+        *entry.offset(3) | PCI_MSIX_ENTRY_CTRL_MASKBIT,
+    );
+    write_volatile(entry, address as u32);
+    write_volatile(entry.offset(1), (address >> 32) as u32);
+    write_volatile(entry.offset(2), data);
+
+    write_volatile(
+        entry.offset(3),
+        *entry.offset(3) & !PCI_MSIX_ENTRY_CTRL_MASKBIT,
+    );
 }
 
 unsafe fn pci_init_msix(dev: &PciDev) {
@@ -205,15 +241,30 @@ unsafe fn pci_init_msix(dev: &PciDev) {
         (msix_cap + PCI_MSIX_FLAGS) as u8,
     );
 
+    control |= PCI_MSIX_FLAGS_MASKALL | PCI_MSIX_FLAGS_ENABLE;
+
+    pci.write(
+        dev.bus,
+        dev.dev,
+        dev.func,
+        (msix_cap + PCI_MSIX_FLAGS) as u8,
+        control,
+    );
+
     let msix_size = (control & PCI_MSIX_FLAGS_QSIZE) + 1;
     println!("msix_size {}", msix_size);
     let base = pci_msix_map_region(dev, msix_size, msix_cap);
 
-    pci_irq_vector(dev);
+    //pci_irq_vector(dev);
+    // Best I can trace it, on x86 msi_domain_alloc_irqs does this job.
 
     //pci_intx(dev, true);
 
     //Set and clear
+
+    pci_msix_program_entry(base, 0);
+    pci_msix_program_entry(base, 1);
+
     control &= !PCI_MSIX_FLAGS_MASKALL;
     control |= PCI_MSIX_FLAGS_ENABLE;
 
@@ -225,8 +276,7 @@ unsafe fn pci_init_msix(dev: &PciDev) {
         control,
     );
 
-    pci_msix_program_entry(base, 0);
-    pci_msix_program_entry(base, 1);
+    //pci_msix_program_entry(base, 1);
 }
 
 fn pci_find_capability(dev: &PciDev, cap: u32) -> u32 {
@@ -343,6 +393,10 @@ pub fn init() {
 
     let dev = get_pci_header().expect("Could not find ivshmem device").1;
     unsafe {
+        //pci_irq_vector(&dev);
+
+        pci_intx(&dev, false);
+
         pci_init_msix(&dev);
     }
 }

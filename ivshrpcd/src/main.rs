@@ -208,7 +208,7 @@ fn ivsh_server_init(fd: RawFd) -> Result<(u16, RawFd, Vec<RawFd>, RawFd), nix::E
 fn interrupt_client(fd: RawFd) {
     let buf: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 1];
     loop {
-        thread::sleep(time::Duration::from_secs(1));
+        thread::sleep(time::Duration::from_secs(5));
         unistd::write(fd, &buf[..]).expect("Failed to notify client");
         println!("Interrupt sent");
     }

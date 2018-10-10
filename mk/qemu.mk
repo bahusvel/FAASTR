@@ -1,5 +1,5 @@
 QEMU=SDL_VIDEO_X11_DGAMOUSE=0 qemu-system-$(ARCH)
-QEMUFLAGS=-serial mon:stdio -d cpu_reset -d guest_errors -d int
+QEMUFLAGS=-serial mon:stdio -d cpu_reset -d guest_errors -d int -no-reboot
 QEMUFLAGS+=-smp 4 -m 2048
 net=no
 vga=no

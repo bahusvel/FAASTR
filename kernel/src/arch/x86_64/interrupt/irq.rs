@@ -1,6 +1,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 
 use context;
+use device::local_apic::LOCAL_APIC;
 use device::serial::{COM1, COM2};
 use device::{local_apic, pic};
 use time;
@@ -91,16 +92,21 @@ interrupt!(rtc, {
 });
 
 interrupt!(pci1, {
-    println!("ivshmem interrupt hit");
-    trigger(9);
+    println!("ivshmem interrupt 1 hit");
+    LOCAL_APIC.eoi();
+    //trigger(9);
 });
 
 interrupt!(pci2, {
-    trigger(10);
+    println!("ivshmem interrupt 2 hit");
+    LOCAL_APIC.eoi();
+    //trigger(10);
 });
 
 interrupt!(pci3, {
-    trigger(11);
+    println!("ivshmem interrupt 3 hit");
+    LOCAL_APIC.eoi();
+    //trigger(11);
 });
 
 interrupt!(mouse, {
