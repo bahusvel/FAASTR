@@ -1,10 +1,9 @@
 use alloc::vec::Vec;
-use arch;
 use byteorder::{ByteOrder, NativeEndian};
 use core::mem;
-use core::ptr::write_volatile;
+use core::ptr::read_volatile;
 use core::slice;
-use devices::pci::{Pci, PciBar, PciClass, PciHeader, PciHeaderError};
+use devices::pci::{pci_intx, PciBar, PciDevice};
 use ringbuf::{Consumer, Producer};
 use sos::{EncodedValues, Value, SOS};
 use spin::Mutex;
@@ -13,7 +12,7 @@ use syscall::physmap;
 
 const VID: u16 = 0x1af4;
 const DID: u16 = 0x1110;
-const BUFFER_SIZE: usize = 1024 * 1024;
+const BUFFER_SIZE: usize = 4 * 1024 * 1024;
 const MMIO_SIZE: usize = 256;
 
 enum MsgType {
@@ -39,12 +38,11 @@ const IVSHRPC_HEADER_SIZE: usize = mem::size_of::<ProtoMsgLen>() + 1;
 type ProtoMsgLen = u32;
 
 lazy_static! {
-    static ref HEADER: PciHeader = {
-        let header = get_pci_header().expect("Could not find a compatible ivshmem device!");
-        header.0
-    };
+    static ref DEVICE: PciDevice = PciDevice::find_by_id(VID, DID)
+        .pop()
+        .expect("Could not find a compatible ivshmem device!");
     static ref BUFFER_PTR: usize = {
-        if let PciBar::Memory(shared_bar) = HEADER.get_bar(2) {
+        if let PciBar::Memory(shared_bar) = DEVICE.header.get_bar(2) {
             let mapping = physmap(shared_bar as usize, BUFFER_SIZE, MAP_WRITE)
                 .expect("Failed to map physical ");
 
@@ -55,7 +53,7 @@ lazy_static! {
         }
     };
     static ref MMIO_BAR: usize = {
-        if let PciBar::Memory(shared_bar) = HEADER.get_bar(0) {
+        if let PciBar::Memory(shared_bar) = DEVICE.header.get_bar(0) {
             let mapping = physmap(shared_bar as usize, MMIO_SIZE, MAP_WRITE)
                 .expect("Failed to map physical ");
             println!("ivshrpc-mmio found and initialised");
@@ -81,290 +79,10 @@ lazy_static! {
     };
 }
 
-fn get_pci_header() -> Option<(PciHeader, PciDev)> {
-    let pci = Pci::new();
-    for bus in pci.buses() {
-        for dev in bus.devs() {
-            for func in dev.funcs() {
-                let pci_dev = PciDev {
-                    bus: bus.num,
-                    dev: dev.num,
-                    func: func.num,
-                };
-                match PciHeader::from_reader(func) {
-                    Ok(header) => {
-                        if header.vendor_id() == VID
-                            && header.device_id() == DID
-                            && header.revision() == 1
-                        {
-                            return Some((header, pci_dev));
-                        }
-                    }
-                    Err(PciHeaderError::NoDevice) => {}
-                    Err(PciHeaderError::UnknownHeaderType(id)) => {
-                        println!("pcid: unknown header type: {}", id);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-struct PciDev {
-    bus: u8,
-    dev: u8,
-    func: u8,
-}
-
-unsafe fn pci_intx(dev: &PciDev, enable: bool) {
-    const PCI_COMMAND: u16 = 0x04;
-    const PCI_COMMAND_INTX_DISABLE: u32 = 0x400;
-
-    let pci = Pci::new();
-
-    let mut data = pci.read(dev.bus, dev.dev, dev.func, 0x04);
-    data |= 7;
-    pci.write(dev.bus, dev.dev, dev.func, 0x04, data);
-    let command = pci.read(dev.bus, dev.dev, dev.func, PCI_COMMAND as u8);
-
-    let new = if enable {
-        command & !PCI_COMMAND_INTX_DISABLE
-    } else {
-        command | PCI_COMMAND_INTX_DISABLE
-    };
-
-    if new != command {
-        pci.write(dev.bus, dev.dev, dev.func, PCI_COMMAND as u8, new);
-    }
-}
-
-unsafe fn pci_irq_vector(dev: &PciDev) -> u8 {
-    const PCI_INTERRUPT_LINE: u8 = 0x3c;
-    let pci = Pci::new();
-
-    let mut data = pci.read(dev.bus, dev.dev, dev.func, PCI_INTERRUPT_LINE);
-    println!("Original IRQ {}", (data & 0xFF) as u8);
-    data = (data & 0xFFFFFF00) | 9;
-    pci.write(dev.bus, dev.dev, dev.func, PCI_INTERRUPT_LINE, data);
-    9
-}
-
-unsafe fn pci_msix_map_region(dev: &PciDev, num_entries: u32, msix_cap: u32) -> usize {
-    let pci = Pci::new();
-    const PCI_MSIX_TABLE: u32 = 4;
-    const PCI_MSIX_TABLE_BIR: u32 = 0x00000007;
-    const PCI_MSIX_TABLE_OFFSET: u32 = 0xfffffff8;
-    const PCI_MSIX_ENTRY_SIZE: u32 = 16;
-
-    let mut table_offset = pci.read(
-        dev.bus,
-        dev.dev,
-        dev.func,
-        (msix_cap + PCI_MSIX_TABLE) as u8,
-    );
-
-    let bir = (table_offset & PCI_MSIX_TABLE_BIR) as u8;
-    table_offset &= PCI_MSIX_TABLE_OFFSET;
-
-    println!("bir {}", bir);
-
-    if let PciBar::Memory(shared_bar) = HEADER.get_bar(1) {
-        println!("phys_addr {}", shared_bar + table_offset);
-        let mapping = physmap(
-            (shared_bar + table_offset) as usize,
-            (num_entries * PCI_MSIX_ENTRY_SIZE) as usize,
-            MAP_WRITE,
-        ).expect("Failed to map physical ");
-        mapping
-    } else {
-        panic!("1st bar of ivshmem is not memory mapped");
-    }
-}
-
-unsafe fn pci_msix_program_entry(base: usize, nr: u32) {
-    const PCI_MSIX_ENTRY_CTRL_MASKBIT: u32 = 1;
-    const PCI_MSIX_ENTRY_SIZE: u32 = 16;
-    const MSI_ADDRESS_BASE: u64 = 0xfee00000;
-    const MSI_DESTINATION_ID_SHIFT: u64 = 12;
-    const MSI_NO_REDIRECTION: u64 = 0x00000000;
-    const MSI_DESTINATION_MODE_PHYSICAL: u64 = 0x00000000;
-    const MSI_TRIGGER_MODE_EDGE: u32 = 0x00000000;
-    const MSI_DELIVERY_MODE_FIXED: u32 = 0x00000000;
-    const ARCH_INTERRUPT_BASE: u32 = 0x20;
-    const MSI_DELIVERY_MODE_NMI: u32 = 0x00000400;
-
-    let apic = &arch::device::local_apic::LOCAL_APIC;
-
-    let cpu_apic_id = apic.id() as u64;
-    println!("Apic id: {}", cpu_apic_id);
-
-    let vector = 9 + nr;
-
-    let address = MSI_ADDRESS_BASE
-        | (cpu_apic_id << MSI_DESTINATION_ID_SHIFT)
-        | MSI_NO_REDIRECTION
-        | MSI_DESTINATION_MODE_PHYSICAL;
-
-    let data = MSI_TRIGGER_MODE_EDGE | MSI_DELIVERY_MODE_FIXED | (vector + ARCH_INTERRUPT_BASE);
-
-    let entry = (base + (nr * PCI_MSIX_ENTRY_SIZE) as usize) as *mut u32;
-    write_volatile(
-        entry.offset(3),
-        *entry.offset(3) | PCI_MSIX_ENTRY_CTRL_MASKBIT,
-    );
-    write_volatile(entry, address as u32);
-    write_volatile(entry.offset(1), (address >> 32) as u32);
-    write_volatile(entry.offset(2), data);
-
-    write_volatile(
-        entry.offset(3),
-        *entry.offset(3) & !PCI_MSIX_ENTRY_CTRL_MASKBIT,
-    );
-}
-
-unsafe fn pci_init_msix(dev: &PciDev) {
-    let pci = Pci::new();
-    const PCI_CAP_ID_MSIX: u32 = 0x11;
-    const PCI_MSIX_FLAGS: u32 = 0x2;
-    const PCI_MSIX_FLAGS_MASKALL: u32 = 0x4000;
-    const PCI_MSIX_FLAGS_ENABLE: u32 = 0x8000;
-    const PCI_MSIX_FLAGS_QSIZE: u32 = 0x07FF;
-
-    let msix_cap = pci_find_capability(dev, PCI_CAP_ID_MSIX);
-    assert!(msix_cap != 0);
-    println!("Cap {}", msix_cap);
-    let mut control = pci.read(
-        dev.bus,
-        dev.dev,
-        dev.func,
-        (msix_cap + PCI_MSIX_FLAGS) as u8,
-    );
-
-    control |= PCI_MSIX_FLAGS_MASKALL | PCI_MSIX_FLAGS_ENABLE;
-
-    pci.write(
-        dev.bus,
-        dev.dev,
-        dev.func,
-        (msix_cap + PCI_MSIX_FLAGS) as u8,
-        control,
-    );
-
-    let msix_size = (control & PCI_MSIX_FLAGS_QSIZE) + 1;
-    println!("msix_size {}", msix_size);
-    let base = pci_msix_map_region(dev, msix_size, msix_cap);
-
-    //pci_irq_vector(dev);
-    // Best I can trace it, on x86 msi_domain_alloc_irqs does this job.
-
-    //pci_intx(dev, true);
-
-    //Set and clear
-
-    pci_msix_program_entry(base, 0);
-    pci_msix_program_entry(base, 1);
-
-    control &= !PCI_MSIX_FLAGS_MASKALL;
-    control |= PCI_MSIX_FLAGS_ENABLE;
-
-    pci.write(
-        dev.bus,
-        dev.dev,
-        dev.func,
-        (msix_cap + PCI_MSIX_FLAGS) as u8,
-        control,
-    );
-
-    //pci_msix_program_entry(base, 1);
-}
-
-fn pci_find_capability(dev: &PciDev, cap: u32) -> u32 {
-    const PCI_CAPABILITY_LIST: u32 = 0x34;
-    let pci = Pci::new();
-
-    let mut ttl = 48;
-    let mut pos = unsafe { pci.read(dev.bus, dev.dev, dev.func, PCI_CAPABILITY_LIST as u8) };
-    while ttl > 0 {
-        if pos < 0x40 {
-            break;
-        }
-
-        pos &= !3;
-
-        let ent = unsafe { pci.read(dev.bus, dev.dev, dev.func, pos as u8) };
-        print!("{} ", ent);
-        let id = ent & 0xff;
-        if id == 0xff {
-            break;
-        }
-        if id == cap {
-            return pos;
-        }
-        pos = ent >> 8;
-
-        ttl -= 1;
-    }
-    println!();
-    0
-}
-
-fn print_pci_device(pci: &Pci, bus_num: u8, dev_num: u8, func_num: u8, header: PciHeader) {
-    let raw_class: u8 = header.class().into();
-    let mut string = format!(
-        "PCI {:>02X}/{:>02X}/{:>02X} {:>04X}:{:>04X} {:>02X}.{:>02X}.{:>02X}.{:>02X} {:?}",
-        bus_num,
-        dev_num,
-        func_num,
-        header.vendor_id(),
-        header.device_id(),
-        raw_class,
-        header.subclass(),
-        header.interface(),
-        header.revision(),
-        header.class()
-    );
-
-    match header.class() {
-        PciClass::Storage => match header.subclass() {
-            0x01 => {
-                string.push_str(" IDE");
-            }
-            0x06 => {
-                string.push_str(" SATA");
-            }
-            _ => (),
-        },
-        PciClass::SerialBus => match header.subclass() {
-            0x03 => match header.interface() {
-                0x00 => {
-                    string.push_str(" UHCI");
-                }
-                0x10 => {
-                    string.push_str(" OHCI");
-                }
-                0x20 => {
-                    string.push_str(" EHCI");
-                }
-                0x30 => {
-                    string.push_str(" XHCI");
-                }
-                _ => (),
-            },
-            _ => (),
-        },
-        _ => (),
-    }
-
-    for (i, bar) in header.bars().iter().enumerate() {
-        if !bar.is_none() {
-            string.push_str(&format!(" {}={}", i, bar));
-        }
-    }
-
-    string.push('\n');
-
-    print!("{}", string);
+pub fn isr() {
+    // Clears interrupt status register.
+    unsafe { read_volatile((*MMIO_BAR as *const u32).offset(1)) };
+    println!("ivshmem interrupt 2 hit");
 }
 
 #[inline]
@@ -378,26 +96,10 @@ fn init_call<T: SOS>(args: T, t: MsgType) {
 }
 
 pub fn init() {
-    let pci = Pci::new();
-    for bus in pci.buses() {
-        for dev in bus.devs() {
-            for func in dev.funcs() {
-                let func_num = func.num;
-                let header = PciHeader::from_reader(func);
-                if header.is_ok() {
-                    print_pci_device(&pci, bus.num, dev.num, func_num, header.unwrap());
-                }
-            }
-        }
-    }
-
-    let dev = get_pci_header().expect("Could not find ivshmem device").1;
     unsafe {
-        //pci_irq_vector(&dev);
-
-        pci_intx(&dev, false);
-
-        pci_init_msix(&dev);
+        while *(*MMIO_BAR as *const i32).offset(2) < 0 {}
+        println!("My id {}", *(*MMIO_BAR as *const i32).offset(2));
+        pci_intx(&DEVICE, true);
     }
 }
 

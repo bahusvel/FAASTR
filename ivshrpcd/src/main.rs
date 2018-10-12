@@ -37,7 +37,7 @@ use std::time;
 const IVSH_PATH: &str = "/dev/shm/ivshmem";
 const IVSH_SERVER: &str = "ivshmem-server";
 const IVSH_SERVER_SOCKET: &str = "/tmp/ivshmem_socket";
-const IVSH_SIZE: usize = 1024 * 1024;
+const IVSH_SIZE: usize = 4 * 1024 * 1024;
 
 type ProtoMsgLen = u32;
 
@@ -208,7 +208,7 @@ fn ivsh_server_init(fd: RawFd) -> Result<(u16, RawFd, Vec<RawFd>, RawFd), nix::E
 fn interrupt_client(fd: RawFd) {
     let buf: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 1];
     loop {
-        thread::sleep(time::Duration::from_secs(5));
+        thread::sleep(time::Duration::from_secs(2));
         unistd::write(fd, &buf[..]).expect("Failed to notify client");
         println!("Interrupt sent");
     }

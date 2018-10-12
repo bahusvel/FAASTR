@@ -1,15 +1,16 @@
 use core::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 
 use context;
-use device::local_apic::LOCAL_APIC;
 use device::serial::{COM1, COM2};
 use device::{local_apic, pic};
+use devices;
 use time;
 
 //resets to 0 in context::switch()
 pub static PIT_TICKS: AtomicUsize = ATOMIC_USIZE_INIT;
 
 unsafe fn trigger(irq: u8) {
+    println!("Unforseen interrupt {} received", irq);
     if irq < 16 {
         if irq >= 8 {
             pic::SLAVE.mask_set(irq - 8);
@@ -92,21 +93,17 @@ interrupt!(rtc, {
 });
 
 interrupt!(pci1, {
-    println!("ivshmem interrupt 1 hit");
-    LOCAL_APIC.eoi();
-    //trigger(9);
+    trigger(9);
 });
 
 interrupt!(pci2, {
-    println!("ivshmem interrupt 2 hit");
-    LOCAL_APIC.eoi();
-    //trigger(10);
+    trigger(10);
+    devices::ivshmem::isr();
+    acknowledge(10);
 });
 
 interrupt!(pci3, {
-    println!("ivshmem interrupt 3 hit");
-    LOCAL_APIC.eoi();
-    //trigger(11);
+    trigger(11);
 });
 
 interrupt!(mouse, {

@@ -4,7 +4,7 @@ QEMUFLAGS+=-smp 4 -m 2048
 net=no
 vga=no
 IVSHMEM=yes
-IVSHMEM_SIZE=$(shell echo $$(( 1024 * 1024 )) )
+IVSHMEM_SIZE=$(shell echo $$(( 4 * 1024 * 1024 )) )
 ifeq ($(iommu),yes)
 	QEMUFLAGS+=-machine q35,iommu=on
 else
@@ -35,7 +35,7 @@ ifeq ($(UNAME),Linux)
 endif
 ifeq ($(IVSHMEM), yes)
 	QEMUFLAGS+= -chardev socket,path=/tmp/ivshmem_socket,id=ivshmem_socket
-	QEMUFLAGS+= -device ivshmem-doorbell,chardev=ivshmem_socket,vectors=1
+	QEMUFLAGS+= -device ivshmem,msi=off,chardev=ivshmem_socket,vectors=1
 endif
 #,int,pcall
 #-device intel-iommu
