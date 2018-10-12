@@ -239,14 +239,14 @@ impl<'b, 'a: 'b> Consumer<'a> {
         Consumer(buffer, &buff[SIZEOF_HEADER..SIZEOF_HEADER + capacity])
     }
 
-    pub fn try_read(&'b mut self, n: usize) -> Option<ReadHandle<'b, 'a>> {
+    pub fn try_read(&'b mut self, n: usize, mut times: usize) -> Option<ReadHandle<'b, 'a>> {
         let current_head = self.0.head.load(Ordering::Relaxed);
-
-        if self.0.shadow_tail.get().wrapping_sub(current_head) <= n {
+        while self.0.shadow_tail.get().wrapping_sub(current_head) < n {
             self.0.shadow_tail.set(self.0.tail.load(Ordering::Acquire));
-            if self.0.shadow_tail.get().wrapping_sub(current_head) <= n {
+            if times == 0 {
                 return None;
             }
+            times -= 1;
         }
 
         Some(ReadHandle {

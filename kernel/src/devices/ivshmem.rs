@@ -1,19 +1,43 @@
 use alloc::vec::Vec;
 use byteorder::{ByteOrder, NativeEndian};
-use core::mem;
+use context;
+use context::{current_context, SharedContext};
+use core::mem::size_of;
+use core::ops::Deref;
 use core::ptr::read_volatile;
 use core::slice;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use devices::pci::{pci_intx, PciBar, PciDevice};
+use hashmap_core::FnvHashMap;
 use ringbuf::{Consumer, Producer};
 use sos::{EncodedValues, Value, SOS};
 use spin::Mutex;
 use syscall::flag::MAP_WRITE;
-use syscall::physmap;
+use syscall::{physmap, sys_cast, sys_fuse};
 
 const VID: u16 = 0x1af4;
 const DID: u16 = 0x1110;
 const BUFFER_SIZE: usize = 4 * 1024 * 1024;
 const MMIO_SIZE: usize = 256;
+
+#[repr(packed)]
+struct MsgHeader {
+    msgtype: u8,
+    length: u32,
+    callid: u64,
+}
+
+impl MsgHeader {
+    #[inline]
+    fn from_slice<T: Deref<Target = [u8]>>(h: T) -> Self {
+        assert!(h.len() == size_of::<MsgHeader>());
+        MsgHeader {
+            msgtype: h[0],
+            length: NativeEndian::read_u32(&h[1..5]),
+            callid: NativeEndian::read_u64(&h[5..13]),
+        }
+    }
+}
 
 enum MsgType {
     Cast,
@@ -22,20 +46,23 @@ enum MsgType {
     Error,
 }
 
-impl From<u8> for MsgType {
-    fn from(v: u8) -> Self {
+impl MsgType {
+    fn from_u8(v: u8) -> Option<Self> {
         match v {
-            0 => MsgType::Cast,
-            1 => MsgType::Fuse,
-            2 => MsgType::Return,
-            3 => MsgType::Error,
-            _ => panic!("Invalid message type"),
+            0 => Some(MsgType::Cast),
+            1 => Some(MsgType::Fuse),
+            2 => Some(MsgType::Return),
+            3 => Some(MsgType::Error),
+            _ => None,
         }
     }
 }
 
-const IVSHRPC_HEADER_SIZE: usize = mem::size_of::<ProtoMsgLen>() + 1;
+const IVSHRPC_HEADER_SIZE: usize = size_of::<ProtoMsgLen>() + 1;
 type ProtoMsgLen = u32;
+type CallId = u64;
+
+static CALL_ID: AtomicUsize = AtomicUsize::new(0);
 
 lazy_static! {
     static ref DEVICE: PciDevice = PciDevice::find_by_id(VID, DID)
@@ -77,6 +104,8 @@ lazy_static! {
         );
         Mutex::new(Producer::from_slice(buffer))
     };
+    static ref CALL_QUEUE: Mutex<FnvHashMap<CallId, SharedContext>> =
+        Mutex::new(FnvHashMap::default());
 }
 
 pub fn isr() {
@@ -86,7 +115,7 @@ pub fn isr() {
 }
 
 #[inline]
-fn init_call<T: SOS>(args: T, t: MsgType) {
+fn write_msg<T: SOS>(args: T, t: MsgType) {
     let len = args.encoded_len();
     let mut lock = PRODUCER.lock();
     let mut buffer = lock.write(IVSHRPC_HEADER_SIZE + len);
@@ -104,30 +133,82 @@ pub fn init() {
 }
 
 pub fn ivshrpc_fuse<'a, T: SOS>(args: T) -> EncodedValues<'a> {
-    // NOTE careful here, it may not be ok to borrow from ring buffer for a long time
-    init_call(args, MsgType::Fuse);
+    let current = current_context();
+    {
+        let callid = CALL_ID.fetch_add(1, Ordering::Relaxed);
+        let mut q = CALL_QUEUE.lock();
+        q.insert(callid as u64, current.clone());
+    }
+    write_msg(args, MsgType::Fuse);
+    {
+        // Atomically checks if return value is already available, if not blocks
+        let mut context_lock = current.write();
+        if context_lock.result.is_none() {
+            context_lock.block();
+        }
+    }
 
+    // NOTE yes, this will force the switch even if the return value is already available, but it is very unlikely that this is the case.
+    unsafe {
+        context::switch();
+    }
+
+    // Once unblocked we will return here
+
+    // FIXME kinda stupid because all this does is put to the value back in... Can be fixed killing this context from the listener. Or special way to exit.
+    return EncodedValues::from(current.write().result.take().unwrap());
+}
+
+fn fuse_proxy(callid: u64, args: EncodedValues) {
+    let res = sys_fuse(args);
+    match res {
+        Ok(vals) => write_msg(vals, MsgType::Return),
+        Err(vals) => write_msg(vals, MsgType::Error),
+    }
+}
+
+fn listener() {
     let mut consumer = CONSUMER.lock();
-
-    let (msgtype, len) = {
-        let header = consumer.read(5);
-        (
-            MsgType::from(header[0]),
-            NativeEndian::read_u32(&header[1..5]),
-        )
+    let header = {
+        let mut header = consumer
+            .try_read(size_of::<MsgHeader>(), 1000)
+            .map(MsgHeader::from_slice);
+        if header.is_none() {
+            // TODO set not listening
+            // Checking one last time to avoid race condition
+            header = consumer
+                .try_read(size_of::<MsgHeader>(), 1)
+                .map(MsgHeader::from_slice);
+            if header.is_none() {
+                return;
+            }
+        }
+        header.unwrap()
     };
 
-    let buff = consumer.read(len as usize);
-
+    let buff = consumer.read(header.length as usize);
     let ret = EncodedValues::from(&buff[..]);
-
-    match msgtype {
-        MsgType::Error => {
-            println!("Error in call {:?}", ret.decode().collect::<Vec<Value>>());
-            EncodedValues::from(ret.into_owned())
+    match MsgType::from_u8(header.msgtype) {
+        Some(MsgType::Error) | Some(MsgType::Return) => {
+            // Deliver result to context
+            let q = CALL_QUEUE.lock();
+            let context = q.get(&header.callid);
+            if context.is_none() {
+                panic!("Received result for unknown context id {}", header.callid);
+            }
+            let context = context.unwrap();
+            let mut context_lock = context.write();
+            context_lock.result = Some(ret.into_owned());
+            context_lock.unblock();
         }
-        MsgType::Return => EncodedValues::from(ret.into_owned()),
-        _ => panic!("Unexpected response to a fuse call"),
+        Some(MsgType::Fuse) => {}
+        Some(MsgType::Cast) => {
+            let res = sys_cast(ret);
+            if res.is_err() {
+                write_msg(res.unwrap_err(), MsgType::Error);
+            }
+        }
+        None => panic!("Unexpected response to a fuse call"),
     }
 }
 
@@ -137,6 +218,6 @@ fn send_interrupt() {
 }
 
 pub fn ivshrpc_cast<T: SOS>(args: T) {
-    init_call(args, MsgType::Cast);
+    write_msg(args, MsgType::Cast);
     //send_interrupt();
 }

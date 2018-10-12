@@ -8,6 +8,7 @@ pub use self::syscall::{data, error, flag, io, number};
 
 pub use self::driver::*;
 //pub use self::futex::futex;
+pub use self::call::*;
 pub use self::process::*;
 pub use self::time::*;
 pub use self::validate::*;

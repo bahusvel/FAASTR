@@ -109,3 +109,12 @@ pub fn contexts_mut() -> RwLockWriteGuard<'static, ContextList> {
 pub fn context_id() -> ContextId {
     CONTEXT_ID.load(Ordering::SeqCst)
 }
+
+pub fn current_context() -> SharedContext {
+    CONTEXTS
+        .call_once(init_contexts)
+        .write()
+        .current()
+        .expect("No current context")
+        .clone()
+}
