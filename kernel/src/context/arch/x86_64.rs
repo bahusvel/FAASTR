@@ -34,6 +34,51 @@ pub struct Context {
     rsp: usize,
 }
 
+macro_rules! store {
+        ($self:expr) => {
+            asm!("fxsave [$0]" : : "r"($self.fx) : "memory" : "intel", "volatile");
+            $self.loadable = true;
+            asm!("mov $0, cr3
+            pushfq ; pop $1
+            mov $2, rbx
+            mov $3, r12
+            mov $4, r13
+            mov $5, r14
+            mov $6, r15
+            mov $7, rsp
+            mov $8, rbp"
+            :"=r"($self.cr3), "=r"($self.rflags), "=r"($self.rbx), "=r"($self.r12), "=r"($self.r13),"=r"($self.r14),"=r"($self.r15), "=r"($self.rsp), "=r"($self.rbp)
+            : // No input
+            : "memory"
+            : "intel", "volatile");
+    };
+}
+
+macro_rules! load {
+    ($next:expr, $cr3_bool:expr) => {
+        if $next.loadable {
+            asm!("fxrstor [$0]" : : "r"($next.fx) : "memory" : "intel", "volatile");
+        } else {
+            asm!("fninit" : : : "memory" : "intel", "volatile");
+        }
+        if $cr3_bool {
+            asm!("mov cr3, $0" : : "r"($next.cr3) : "memory" : "intel", "volatile");
+        }
+        asm!("push $0 ; popfq
+            mov rbx, $1
+            mov r12, $2
+            mov r13, $3
+            mov r14, $4
+            mov r15, $5
+            mov rsp, $6
+            mov rbp, $7"
+        : // No output
+        : "r"($next.rflags), "r"($next.rbx), "r"($next.r12), "r"($next.r13), "r"($next.r14), "r"($next.r15), "r"($next.rsp), "r"($next.rbp)
+        : "memory"
+        : "intel", "volatile");
+    };
+}
+
 impl Context {
     pub fn new() -> Context {
         Context {
@@ -93,83 +138,26 @@ impl Context {
     #[inline(never)]
     #[naked]
     pub unsafe fn switch_to(&mut self, next: &mut Context) {
-        asm!("fxsave [$0]" : : "r"(self.fx) : "memory" : "intel", "volatile");
-        self.loadable = true;
-        if next.loadable {
-            asm!("fxrstor [$0]" : : "r"(next.fx) : "memory" : "intel", "volatile");
-        } else {
-            asm!("fninit" : : : "memory" : "intel", "volatile");
-        }
-
-        asm!("mov $0, cr3" : "=r"(self.cr3) : : "memory" : "intel", "volatile");
-        if next.cr3 != self.cr3 {
-            asm!("mov cr3, $0" : : "r"(next.cr3) : "memory" : "intel", "volatile");
-        }
-
-        asm!("pushfq ; pop $0" : "=r"(self.rflags) : : "memory" : "intel", "volatile");
-        asm!("push $0 ; popfq" : : "r"(next.rflags) : "memory" : "intel", "volatile");
-
-        asm!("mov $0, rbx" : "=r"(self.rbx) : : "memory" : "intel", "volatile");
-        asm!("mov rbx, $0" : : "r"(next.rbx) : "memory" : "intel", "volatile");
-
-        asm!("mov $0, r12" : "=r"(self.r12) : : "memory" : "intel", "volatile");
-        asm!("mov r12, $0" : : "r"(next.r12) : "memory" : "intel", "volatile");
-
-        asm!("mov $0, r13" : "=r"(self.r13) : : "memory" : "intel", "volatile");
-        asm!("mov r13, $0" : : "r"(next.r13) : "memory" : "intel", "volatile");
-
-        asm!("mov $0, r14" : "=r"(self.r14) : : "memory" : "intel", "volatile");
-        asm!("mov r14, $0" : : "r"(next.r14) : "memory" : "intel", "volatile");
-
-        asm!("mov $0, r15" : "=r"(self.r15) : : "memory" : "intel", "volatile");
-        asm!("mov r15, $0" : : "r"(next.r15) : "memory" : "intel", "volatile");
-
-        asm!("mov $0, rsp" : "=r"(self.rsp) : : "memory" : "intel", "volatile");
-        asm!("mov rsp, $0" : : "r"(next.rsp) : "memory" : "intel", "volatile");
-
-        asm!("mov $0, rbp" : "=r"(self.rbp) : : "memory" : "intel", "volatile");
-        asm!("mov rbp, $0" : : "r"(next.rbp) : "memory" : "intel", "volatile");
+        store!(self);
+        load!(next, self.cr3 != next.cr3);
     }
 
     #[cold]
     #[inline(never)]
     #[naked]
     pub unsafe fn switch_discarding(&self, next: &mut Context) {
-        if next.loadable {
-            asm!("fxrstor [$0]" : : "r"(next.fx) : "memory" : "intel", "volatile");
-        }
-        if next.cr3 != self.cr3 {
-            asm!("mov cr3, $0" : : "r"(next.cr3) : "memory" : "intel", "volatile");
-        }
-        asm!("push $0 ; popfq" : : "r"(next.rflags) : "memory" : "intel", "volatile");
-        asm!("mov rbx, $0" : : "r"(next.rbx) : "memory" : "intel", "volatile");
-        asm!("mov r12, $0" : : "r"(next.r12) : "memory" : "intel", "volatile");
-        asm!("mov r13, $0" : : "r"(next.r13) : "memory" : "intel", "volatile");
-        asm!("mov r14, $0" : : "r"(next.r14) : "memory" : "intel", "volatile");
-        asm!("mov r15, $0" : : "r"(next.r15) : "memory" : "intel", "volatile");
-        asm!("mov rsp, $0" : : "r"(next.rsp) : "memory" : "intel", "volatile");
-        asm!("mov rbp, $0" : : "r"(next.rbp) : "memory" : "intel", "volatile");
+        load!(next, next.cr3 != self.cr3);
     }
 
     #[cold]
     #[inline(never)]
     #[naked]
     pub unsafe fn switch_user(&mut self, next: &mut Context, ip: usize, sp: usize, arg: usize) {
-        asm!("fxsave [$0]" : : "r"(self.fx) : "memory" : "intel", "volatile");
-        self.loadable = true;
+        store!(self);
 
-        asm!("mov $0, cr3" : "=r"(self.cr3) : : "memory" : "intel", "volatile");
         if next.cr3 != self.cr3 {
             asm!("mov cr3, $0" : : "r"(next.cr3) : "memory" : "intel", "volatile");
         }
-        asm!("pushfq ; pop $0" : "=r"(self.rflags) : : "memory" : "intel", "volatile");
-        asm!("mov $0, rbx" : "=r"(self.rbx) : : "memory" : "intel", "volatile");
-        asm!("mov $0, r12" : "=r"(self.r12) : : "memory" : "intel", "volatile");
-        asm!("mov $0, r13" : "=r"(self.r13) : : "memory" : "intel", "volatile");
-        asm!("mov $0, r14" : "=r"(self.r14) : : "memory" : "intel", "volatile");
-        asm!("mov $0, r15" : "=r"(self.r15) : : "memory" : "intel", "volatile");
-        asm!("mov $0, rsp" : "=r"(self.rsp) : : "memory" : "intel", "volatile");
-        asm!("mov $0, rbp" : "=r"(self.rbp) : : "memory" : "intel", "volatile");
 
         // Push some config stuff on the stack
         asm!("push r10
@@ -211,8 +199,7 @@ impl Context {
              iretq"
              : // No output because it never returns
              :   "{r14}"(gdt::GDT_USER_DATA << 3 | 3), // Data segment
-                 "{r15}"(gdt::GDT_NULL << 3 | 3), // TLS segment
-                 "{rax}"(arg)
+                 "{r15}"(gdt::GDT_NULL << 3 | 3) // TLS segment
              : // No clobbers because it never returns
              : "intel", "volatile");
         unreachable!();

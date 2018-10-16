@@ -2,13 +2,19 @@
 name = "ivshrpcd"
 version = "0.1.0"
 authors = ["Denis Lavrov <bahus.vel@gmail.com>"]
+autobins = false
+
+[[bin]]
+name="ivshrpcd"
+path="src/bin/main.rs"
 
 [dependencies]
-memmap = "0.7.0"
+memmap = {version="0.7.0"}
 ringbuf = { path = "../ringbuf" }
 sos = { path = "../sos-rs",  features = ["alloc"] }
-lazy_static = "1.1.0"
-fnv = "1.0.6"
+lazy_static = { version="1.1.0" }
+fnv = {version="1.0.6" }
 byteorder = { version = "1.1.0", default-features=false }
 either = { version = "1.5.0", default-features=false }
-nix = "0.11.0"
+nix = {version="0.11.0"}
+ivshrpc = {path = "./ivshrpc"}

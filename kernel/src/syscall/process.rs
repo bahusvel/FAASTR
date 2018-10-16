@@ -97,20 +97,12 @@ pub fn exit(status: usize) -> ! {
         // Stop CPU if kernel exits.
         if pid == ContextId::from(1) {
             println!("Main kernel thread exited with status {:X}", status);
-
             extern "C" {
                 fn kreset() -> !;
                 fn kstop() -> !;
             }
-
-            if status == SIGTERM {
-                unsafe {
-                    kreset();
-                }
-            } else {
-                unsafe {
-                    kstop();
-                }
+            unsafe {
+                kstop();
             }
         } else {
             //reap(pid).expect("Failed to reap context");

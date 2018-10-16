@@ -44,6 +44,14 @@ long sys_cast(Values ptr, long length) {
   return r;
 }
 
+void print(Values args) {
+  char buf[4096] = {0};
+  Values vals = (Values)buf;
+  const char* input = GetString(args);
+  SetString(vals, input);
+  sys_write(vals, 4096);
+  sys_return(vals, 4096);
+}
 
 void passthrough(Values args) {
   char buf[4096] = {0};

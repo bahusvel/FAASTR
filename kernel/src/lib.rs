@@ -47,6 +47,7 @@ extern crate byteorder;
 extern crate either;
 extern crate goblin;
 extern crate hashmap_core;
+extern crate ivshrpc;
 extern crate linked_list_allocator;
 extern crate ringbuf;
 extern crate serde_json_core;
@@ -151,6 +152,7 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
         use sos::Value;
         ivshmem::init();
         ivshmem::ivshrpc_cast(sos!(("host", "hello"), "Hello"));
+        ivshmem::ivshrpc_cast(sos!(("host", "cast_test"), "Hello ivsrpcd"));
         let result = ivshmem::ivshrpc_fuse(sos!(("host", "hello_fuse"), "Fuse"));
 
         println!(
