@@ -15,10 +15,13 @@ use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::fmt::Debug;
 use core::ops::Deref;
+use core::slice;
 use core::str::from_utf8;
 
 const NULL: [u8; 1] = [0];
 const WRONG_TYPE: &str = "Received value is of incorrect type";
+
+pub type EncodedValuesPtr = *const u8;
 
 type SyntacticFunc<'a> = (&'a str, &'a str);
 
@@ -145,6 +148,12 @@ impl<'a> EncodedValues<'a> {
     pub fn into_owned(self) -> OwnedEncodedValues {
         self.0.into_owned()
     }
+    /* NO, length is not currently sent, I need to send it.
+    pub unsafe fn from_ptr(ptr: EncodedValuesPtr) -> Self {
+        let length = *(ptr as *const u32);
+        EncodedValues(Cow::Borrowed(slice::from_raw_parts(ptr, length as usize)))
+    }
+    */
 }
 
 #[cfg(feature = "alloc")]

@@ -556,7 +556,11 @@ impl ContextValues {
 
     // TODO this should be Result
     pub fn append_encode<T: SOS>(&mut self, values: &T) -> Option<VirtualAddress> {
-        let length = self.memory.as_ref()?.len_bytes();
+        let length = self
+            .memory
+            .as_ref()
+            .expect("No argument memory mapped!")
+            .len_bytes();
         let need = values.encoded_len();
         //println!("Need {}, length {}, offset {}", need, length, self.offset);
         if length - self.offset < need {

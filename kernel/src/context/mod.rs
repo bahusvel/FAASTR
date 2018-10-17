@@ -1,7 +1,6 @@
 //! # Context management
 //!
 //! For resources on contexts, please consult [wikipedia](https://en.wikipedia.org/wiki/Context_switch) and  [osdev](https://wiki.osdev.org/Context_Switching)
-use self::load::KERNEL_MODULE;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::alloc::{GlobalAlloc, Layout};
@@ -15,7 +14,7 @@ pub use self::context::{Context, ContextId, SharedContext, Status, WaitpidKey};
 pub use self::list::ContextList;
 pub use self::load::{
     cached_module, initfs_module, load_and_cache, FuncPtr, Module, ModuleFuncPtr, SharedModule,
-    INVALID_FUNCTION,
+    INVALID_FUNCTION, KERNEL_MODULE,
 };
 pub use self::memory::ContextMemory;
 pub use self::switch::{fuse_return, fuse_switch, switch};

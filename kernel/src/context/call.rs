@@ -1,5 +1,5 @@
 use super::memory::ContextMemory;
-use super::{FuncPtr, ModuleFuncPtr, SharedModule};
+use super::{FuncPtr, Module, ModuleFuncPtr, SharedModule};
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -7,13 +7,51 @@ use arch::interrupt;
 use context;
 use context::{Context, SharedContext, Status};
 use core::alloc::{GlobalAlloc, Layout};
+use core::mem;
 use error::*;
 use memory::{allocate_frames, EntryFlags, PAGE_SIZE};
 use paging::temporary_page::TemporaryPage;
 use paging::{ActivePageTable, InactivePageTable, Page, VirtualAddress};
 use sos::{EncodedValues, SOS};
 
+pub fn spawn_kernel() -> Result<'static, Context> {
+    let mut context = Context::new(context::KERNEL_MODULE.clone());
+    {
+        let mut fx = unsafe {
+            Box::from_raw(
+                ::ALLOCATOR.alloc(Layout::from_size_align_unchecked(512, 16)) as *mut [u8; 512],
+            )
+        };
+        for b in fx.iter_mut() {
+            *b = 0;
+        }
+        let (stack, _) = ContextMemory::new_kernel(
+            65_536 / PAGE_SIZE,
+            EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+        ).ok_or("Failed to allocate kernel stack")?;
+
+        let (args, _) = ContextMemory::new_kernel(
+            1,
+            EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+        ).ok_or("Failed to allocate kernel args")?;
+        context.args.set_memory(args);
+
+        context
+            .arch
+            .set_page_table(unsafe { ActivePageTable::new().address() });
+        context.arch.set_fx(fx.as_ptr() as usize);
+        context.kfx = Some(fx);
+        context.kstack = Some(stack);
+    }
+    Ok(context)
+}
+
 pub fn spawn(module: SharedModule) -> Result<'static, Context> {
+    if (&*module as *const Module) == (&**context::KERNEL_MODULE as *const Module) {
+        println!("Spawning kernel");
+        return spawn_kernel();
+    }
+
     let mut fx = unsafe {
         Box::from_raw(
             ::ALLOCATOR.alloc(Layout::from_size_align_unchecked(512, 16)) as *mut [u8; 512],
@@ -28,6 +66,15 @@ pub fn spawn(module: SharedModule) -> Result<'static, Context> {
     let mut context = Context::new(module.clone());
 
     {
+        let (stack, address) = ContextMemory::new_kernel(
+            65_536 / PAGE_SIZE,
+            EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+        ).ok_or("Failed to allocate kernel stack")?;
+        context
+            .arch
+            .set_stack(address.get() as usize + stack.len_bytes());
+        context.kstack = Some(stack);
+
         //Initializse some basics
         context.arch.set_fx(fx.as_ptr() as usize);
 
@@ -178,16 +225,7 @@ fn fuse_inner<'a, S: SOS>(
         {
             let mut context_lock = contexts_lock.current().expect("No current context");
             context.ret_link = Some(context_lock.clone());
-
             context.cpu_id = context_lock.read().cpu_id;
-            let (stack, address) = ContextMemory::new_kernel(
-                65_536 / PAGE_SIZE,
-                EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
-            ).ok_or("Failed to allocate kernel stack")?;
-            context
-                .arch
-                .set_stack(address.get() as usize + stack.len_bytes());
-            context.kstack = Some(stack);
             context.args.append_encode(args);
         }
 
@@ -233,16 +271,22 @@ fn cast_inner<S: SOS>(
     args: &S,
 ) -> Result<'static, SharedContext> {
     context.function = func;
-    context.status = Status::New;
-    let (stack, address) = ContextMemory::new_kernel(
-        65_536 / PAGE_SIZE,
-        EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
-    ).ok_or("Failed to allocate kernel stack")?;
-    context
-        .arch
-        .set_stack(address.get() as usize + stack.len_bytes());
-    context.kstack = Some(stack);
     context.args.append_encode(args);
 
+    // If casting to a kernel module
+    if (&*context.module as *const Module) == (&**context::KERNEL_MODULE as *const Module) {
+        let stack = context.kstack.as_mut().expect("No stack!");
+        let address = stack
+            .map_to_kernel(EntryFlags::GLOBAL | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+            .expect("Not mapping");
+        let offset = stack.len_bytes() - mem::size_of::<usize>();
+        unsafe {
+            let func_ptr = (address.get() as *mut usize).offset(offset as isize);
+            *(func_ptr as *mut usize) = func as usize;
+            context.arch.set_stack(func_ptr as usize);
+        }
+    }
+
+    context.status = Status::New;
     Ok(context::contexts_mut().insert(context)?.clone())
 }

@@ -91,7 +91,7 @@ pub unsafe fn switch() -> bool {
     };
     let from = &mut *from_ptr;
     // Switch process states, TSS stack pointer, and store new context ID
-    let mut to_user = false;
+    let mut new = false;
     if to_ptr as usize != 0 {
         let to = &mut *to_ptr;
         // NOTE is this correct assumption?
@@ -99,7 +99,7 @@ pub unsafe fn switch() -> bool {
             from.status = Status::Runnable;
         }
         if to.status == Status::New {
-            to_user = true;
+            new = true;
         }
         to.status = Status::Running;
         if let Some(ref stack) = to.kstack {
@@ -119,26 +119,43 @@ pub unsafe fn switch() -> bool {
 
     if to_ptr as usize == 0 {
         // No target was found, return
-        false
-    } else {
-        let to = &mut *to_ptr;
-        println!("Switch gonna switch {:?}, {}", to.id, to_user);
-        if to_user {
-            let sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
-            from.arch.switch_user(
-                &mut to.arch,
+        return false;
+    }
+
+    let to = &mut *to_ptr;
+    println!(
+        "Switch gonna switch {}({:?}), New {}, Kernel {}",
+        to.name(),
+        to.id,
+        new,
+        to.function > ::KERNEL_OFFSET
+    );
+    if new {
+        if to.function > ::KERNEL_OFFSET {
+            // To kernel
+            from.arch.switch_kernel(
+                &to.arch,
                 to.function,
-                sp,
                 to.args
                     .as_ref()
                     .map(|a| a.context_address().get())
                     .unwrap_or(0),
             );
         } else {
-            from.arch.switch_to(&mut to.arch);
+            from.arch.switch_user(
+                &mut to.arch,
+                to.function,
+                to.args
+                    .as_ref()
+                    .map(|a| a.context_address().get())
+                    .unwrap_or(0),
+            );
         }
-        true
+    } else {
+        from.arch.switch_to(&mut to.arch);
     }
+
+    true
 }
 
 /// Switch to the next context
@@ -243,14 +260,11 @@ pub unsafe fn fuse_switch(to_context: SharedContext, func: usize) -> () {
     // Unset global lock before switch, as arch is only usable by the current CPU at this time
     arch::CONTEXT_SWITCH_LOCK.store(false, Ordering::SeqCst);
 
-    let sp = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
-
     let to = &mut *to_ptr;
 
     (&mut *from_ptr).arch.switch_user(
         &mut to.arch,
         func,
-        sp,
         to.args
             .as_ref()
             .map(|a| a.context_address().get())

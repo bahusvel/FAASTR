@@ -8,7 +8,7 @@ use hashmap_core::FnvHashMap;
 use interrupt;
 use ivshrpc::*;
 use ringbuf::{Consumer, Producer};
-use sos::{EncodedValues, SOS};
+use sos::{EncodedValues, EncodedValuesPtr, SOS};
 use spin::Mutex;
 use syscall::flag::MAP_WRITE;
 use syscall::{exit, physmap, sys_cast, sys_fuse};
@@ -83,15 +83,18 @@ pub fn init() {
     }
 }
 
-extern "C" fn fuse_proxy() {
-    println!("Fuse OK");
-    /*
-    let res = sys_fuse(args);
+pub extern "C" fn fuse_proxy(values: EncodedValuesPtr) {
+    println!("Fuse OK 0x{:x}", values as usize);
+
+    let values = unsafe { EncodedValues::from(slice::from_raw_parts(values, 4096)) };
+
+    let res = sys_fuse(values);
     match res {
-        Ok(vals) => write_msg(vals, MsgHeader::new(MsgType::Return, callid)),
-        Err(vals) => write_msg(vals, MsgHeader::new(MsgType::Error, callid)),
+        // TODO the callid is not zero, I need to pass it through values above.
+        Ok(vals) => write_msg(vals, MsgHeader::new(MsgType::Return, 0)),
+        Err(vals) => write_msg(vals, MsgHeader::new(MsgType::Error, 0)),
     }
-    */
+
     exit(0);
 }
 
@@ -133,11 +136,9 @@ pub fn isr() {
                 context_lock.unblock();
             }
             Some(MsgType::Fuse) => {
-                let mut contexts = contexts_mut();
-                let mut proxy = contexts.spawn(fuse_proxy).expect("Failed to spawn proxy");
-                proxy.status = Status::Runnable;
-
-                contexts.insert(proxy).expect("Failed to schedule proxy")
+                println!("Proxy ptr: {:x}", fuse_proxy as usize);
+                context::cast_ptr((context::KERNEL_MODULE.clone(), fuse_proxy as usize), &ret)
+                    .expect("Failed to cast proxy");
             }
             Some(MsgType::Cast) => {
                 let res = sys_cast(ret);

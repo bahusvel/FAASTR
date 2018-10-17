@@ -22,8 +22,11 @@ lazy_static! {
         env: FnvHashMap::new(),
         bindings: FnvHashMap::new(),
     });
-    static ref MODULE_CACHE: RwLock<FnvHashMap<String, SharedModule>> =
-        RwLock::new(FnvHashMap::new());
+    static ref MODULE_CACHE: RwLock<FnvHashMap<String, SharedModule>> = {
+        let mut map = FnvHashMap::new();
+        map.insert(KERNEL_MODULE.name.clone(), KERNEL_MODULE.clone());
+        RwLock::new(map)
+    };
 }
 
 pub type ModuleFuncPtr = usize;

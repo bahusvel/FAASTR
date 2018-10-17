@@ -8,6 +8,8 @@ use gdt;
 /// This must be done, as no locks can be held on the stack during switch
 pub static CONTEXT_SWITCH_LOCK: AtomicBool = ATOMIC_BOOL_INIT;
 
+const USER_STACK_PTR: usize = ::USER_STACK_OFFSET + ::USER_STACK_SIZE - 256;
+
 #[derive(Clone, Debug)]
 pub struct Context {
     /// FX valid?
@@ -145,14 +147,46 @@ impl Context {
     #[cold]
     #[inline(never)]
     #[naked]
-    pub unsafe fn switch_discarding(&self, next: &mut Context) {
+    pub unsafe fn switch_discarding(&self, next: &Context) {
         load!(next, next.cr3 != self.cr3);
     }
 
     #[cold]
     #[inline(never)]
     #[naked]
-    pub unsafe fn switch_user(&mut self, next: &mut Context, ip: usize, sp: usize, arg: usize) {
+    pub unsafe fn switch_kernel(&mut self, next: &Context, ip: usize, arg: usize) {
+        store!(self);
+        asm!("push $0; popfq
+             mov rsp, $1
+             mov rbp, $2
+             push $3
+             mov rdi, $4
+             xor rbx, rbx
+             xor rcx, rcx
+             xor rdx, rdx
+             xor rsi, rsi
+             xor r8, r8
+             xor r9, r9
+             xor r10, r10
+             xor r11, r11
+             xor r12, r12
+             xor r13, r13
+             xor r14, r14
+             xor r15, r15"
+             : // No output because it never returns
+             :  "r"(next.rflags)
+                "r"(next.rsp)
+                "r"(next.rbp)
+                "r"(ip)
+                "r"(arg)
+             : // No clobbers because it never returns
+             : "intel", "volatile");
+    }
+
+    #[cold]
+    #[inline(never)]
+    #[naked]
+    pub unsafe fn switch_user(&mut self, next: &mut Context, ip: usize, arg: usize) {
         store!(self);
 
         if next.cr3 != self.cr3 {
@@ -168,13 +202,15 @@ impl Context {
               push r15"
               : // No output
               :   "{r10}"(gdt::GDT_USER_DATA << 3 | 3), // Data segment
-                  "{r11}"(sp), // Stack pointer
+                  "{r11}"(USER_STACK_PTR), // Stack pointer
                   "{r12}"(1 << 9), // Flags - Set interrupt enable flag
                   "{r13}"(gdt::GDT_USER_CODE << 3 | 3), // Code segment
                   "{r14}"(ip), // IP
                   "{r15}"(arg) // Argument
               : // No clobbers
               : "intel", "volatile");
+
+        // Stack layout: https://www.felixcloutier.com/x86/IRET:IRETD.html
 
         asm!("mov ds, r14d
              mov es, r14d
@@ -202,6 +238,7 @@ impl Context {
                  "{r15}"(gdt::GDT_NULL << 3 | 3) // TLS segment
              : // No clobbers because it never returns
              : "intel", "volatile");
+
         unreachable!();
     }
 }
