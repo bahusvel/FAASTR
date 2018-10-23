@@ -1,5 +1,5 @@
 use context;
-use context::{contexts_mut, current_context, SharedContext, Status};
+use context::{current_context, SharedContext, Status};
 use core::ptr::read_volatile;
 use core::slice;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -102,7 +102,12 @@ pub fn isr() {
     unsafe { read_volatile((*MMIO_BAR as *const u32).offset(1)) };
     println!("ivshmem interrupt 2 hit");
 
-    let mut consumer = CONSUMER.lock();
+    let consumer = CONSUMER.try_lock();
+    if consumer.is_none() {
+        return;
+    }
+
+    let mut consumer = consumer.unwrap();
     loop {
         let header = {
             let mut header = consumer

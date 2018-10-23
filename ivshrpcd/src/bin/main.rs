@@ -10,12 +10,16 @@ extern crate ringbuf;
 extern crate sos;
 extern crate ivshrpc;
 extern crate nix;
+extern crate spin;
+extern crate spmc;
+extern crate threadpool;
 
 mod dispatch;
 
 use byteorder::{ByteOrder, NativeEndian};
 use dispatch::dispatch;
 
+use fnv::FnvHashMap;
 use ivshrpc::*;
 use memmap::MmapMut;
 use nix::fcntl;
@@ -23,27 +27,37 @@ use nix::sys::socket::{recvmsg, CmsgSpace, ControlMessage, MsgFlags, RecvMsg};
 use nix::sys::uio::IoVec;
 use nix::unistd;
 use ringbuf::{Consumer, Header, Producer};
-use sos::{EncodedValues, JustError, SOS};
+use sos::{EncodedValues, OwnedEncodedValues, SOS};
 
 use std::fs::{remove_file, File};
 use std::io::Read;
+use std::ops::Deref;
 use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::process::Command;
-use std::str;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
-use std::thread;
-use std::time;
+use std::sync::{Arc, Condvar, Mutex};
+use std::{str, thread, time};
+use threadpool::ThreadPool;
 
 const IVSH_PATH: &str = "/dev/shm/ivshmem";
 const IVSH_SERVER: &str = "ivshmem-server";
 const IVSH_SERVER_SOCKET: &str = "/tmp/ivshmem_socket";
+const NUM_WORKERS: usize = 8;
 
 lazy_static! {
-    static ref NOTIFY_FD: Mutex<RawFd> = Mutex::new(-1);
-    static ref PRODUCER: Mutex<Option<Producer<'static>>> = Mutex::new(None);
+    static ref NOTIFY_FD: spin::Mutex<RawFd> = spin::Mutex::new(-1);
+    static ref PRODUCER: spin::Mutex<Option<Producer<'static>>> = spin::Mutex::new(None);
+    static ref CALL_QUEUE: spin::Mutex<FnvHashMap<CallId, CallResult>> =
+        spin::Mutex::new(FnvHashMap::default());
+    static ref THREAD_POOL: spin::Mutex<ThreadPool> =
+        spin::Mutex::new(ThreadPool::new(NUM_WORKERS));
 }
+
+type CallResult = Arc<(
+    Mutex<Option<Result<OwnedEncodedValues, OwnedEncodedValues>>>,
+    Condvar,
+)>;
 
 static CALL_ID: AtomicUsize = AtomicUsize::new(0);
 static mut CONSUMER: Option<Consumer> = None;
@@ -60,17 +74,6 @@ fn get_fd(msg: &RecvMsg) -> RawFd {
     return -1;
 }
 
-fn handle_fuse(values: EncodedValues, callid: CallId) -> Result<(), JustError<'static>> {
-    let result = dispatch(values, true)?;
-
-    write_msg(
-        EncodedValues::from(result),
-        MsgHeader::new(MsgType::Return, callid),
-    );
-
-    Ok(())
-}
-
 fn send_interrupt(fd: RawFd) {
     let buf: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 1];
     let res = unistd::write(fd, &buf[..]);
@@ -82,7 +85,7 @@ fn send_interrupt(fd: RawFd) {
 #[inline]
 fn write_msg<T: SOS>(args: T, mut header: MsgHeader) {
     header.length = args.encoded_len() as u32;
-    let mut lock = PRODUCER.lock().unwrap();
+    let mut lock = PRODUCER.lock();
     let mut buffer = lock
         .as_mut()
         .unwrap()
@@ -91,7 +94,7 @@ fn write_msg<T: SOS>(args: T, mut header: MsgHeader) {
     args.encode(&mut buffer[IVSHRPC_HEADER_SIZE..]);
 
     // TODO, check if listening
-    let fd = NOTIFY_FD.lock().unwrap();
+    let fd = NOTIFY_FD.lock();
     assert!(*fd != -1);
     send_interrupt(*fd);
 }
@@ -112,7 +115,7 @@ fn listen_for_clients(fd: RawFd, myid: u16) -> Result<(), nix::Error> {
             println!("Client id {} disconnected", rcvid)
         } else {
             println!("Client id {} connected", rcvid);
-            *NOTIFY_FD.lock().unwrap() = fd;
+            *NOTIFY_FD.lock() = fd;
         }
     }
 }
@@ -139,10 +142,24 @@ pub fn ivshrpc_cast<T: SOS>(args: T) {
     write_msg(args, MsgHeader::new(MsgType::Cast, callid as u64));
 }
 
-pub fn ivshrpc_fuse<'a, T: SOS>(args: T) {
+pub fn ivshrpc_fuse<'a, T: SOS>(args: T) -> Result<OwnedEncodedValues, OwnedEncodedValues> {
     //-> EncodedValues<'a> {}
     let callid = CALL_ID.fetch_add(1, Ordering::Relaxed);
     write_msg(args, MsgHeader::new(MsgType::Fuse, callid as u64));
+
+    let entry = CALL_QUEUE
+        .lock()
+        .entry(callid as u64)
+        .or_insert(Arc::new((Mutex::new(None), Condvar::new())))
+        .clone();
+
+    let (lock, var) = entry.deref();
+    let mut res = lock.lock().unwrap();
+    while res.is_none() {
+        res = var.wait(res).unwrap();
+    }
+
+    return res.take().unwrap();
 }
 
 fn listener() {
@@ -172,19 +189,40 @@ fn listener() {
         let buff = consumer.read(header.length as usize);
         //println!("Bytes: {:?}", &buff[..]);
         let values = EncodedValues::from(&buff[..]);
+        let callid = header.callid;
+        let msgtype = MsgType::from_u8(header.msgtype).expect("Unexpected msgtype");
 
-        let error = match MsgType::from_u8(header.msgtype).expect("Unexpected msgtype") {
-            MsgType::Fuse => handle_fuse(values, header.callid),
-            MsgType::Cast => dispatch(values, false).map(|_| ()),
-            _ => panic!("Not Implemented"),
+        match msgtype {
+            MsgType::Fuse | MsgType::Cast => {
+                let pool = THREAD_POOL.lock();
+                let owned_values = values.into_owned();
+                pool.execute(move || {
+                    let result = dispatch(owned_values, msgtype == MsgType::Fuse);
+                    match result {
+                        Ok(val) => if msgtype == MsgType::Fuse {
+                            write_msg(
+                                EncodedValues::from(val),
+                                MsgHeader::new(MsgType::Error, callid),
+                            );
+                        },
+                        Err(err) => write_msg(err, MsgHeader::new(MsgType::Error, callid)),
+                    }
+                });
+            }
+            MsgType::Error | MsgType::Return => {
+                let entry = CALL_QUEUE
+                    .lock()
+                    .remove(&callid)
+                    .expect("Received return for unqueued call");
+                let (lock, var) = entry.deref();
+                *lock.lock().unwrap() = Some(if msgtype == MsgType::Error {
+                    Err(values.into_owned())
+                } else {
+                    Ok(values.into_owned())
+                });
+                var.notify_all();
+            }
         };
-
-        if error.is_err() {
-            write_msg(
-                error.unwrap_err(),
-                MsgHeader::new(MsgType::Error, header.callid),
-            );
-        }
     }
 }
 
@@ -222,7 +260,7 @@ fn ivsh_server_init(fd: RawFd) -> Result<(u16, RawFd, RawFd), nix::Error> {
         if rcvid == id {
             return Ok((id, memfd, fd));
         }
-        *NOTIFY_FD.lock().unwrap() = fd;
+        *NOTIFY_FD.lock() = fd;
     }
 }
 
@@ -271,7 +309,7 @@ fn main() {
         Header::new_inline_at(viho);
         Header::new_inline_at(vohi);
         // This is used to escape mapping lifetime.
-        *PRODUCER.lock().unwrap() = Some(Producer::from_slice(&mut *(viho as *mut [u8])));
+        *PRODUCER.lock() = Some(Producer::from_slice(&mut *(viho as *mut [u8])));
         CONSUMER = Some(Consumer::from_slice(&mut *(vohi as *mut [u8])));
     }
 

@@ -45,6 +45,7 @@ impl MsgHeader {
     }
 }
 
+#[derive(PartialEq)]
 pub enum MsgType {
     Cast,
     Fuse,
