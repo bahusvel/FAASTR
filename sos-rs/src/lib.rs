@@ -15,7 +15,6 @@ use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::fmt::Debug;
 use core::ops::Deref;
-use core::slice;
 use core::str::from_utf8;
 
 const NULL: [u8; 1] = [0];
@@ -69,7 +68,7 @@ pub trait SOS {
     fn encoded_len(&self) -> usize;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value<'a> {
     Int32(i32),
     UInt32(u32),
@@ -77,7 +76,11 @@ pub enum Value<'a> {
     UInt64(u64),
     Float(f32),
     Double(f64),
+    #[cfg(feature = "alloc")]
+    OwnedError(String),
     Error(&'a str),
+    #[cfg(feature = "alloc")]
+    OwnedString(String),
     String(&'a str),
     Opaque(&'a [u8]),
     Function(Function<'a>),
@@ -112,7 +115,7 @@ impl<'a> SOS for JustError<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReferencedValues<'a>(pub &'a [Value<'a>]);
 
 impl<'a> SOS for ReferencedValues<'a> {
@@ -132,6 +135,7 @@ pub type OwnedEncodedValues = Vec<u8>;
 #[derive(Debug)]
 pub struct EncodedValues<'a>(Cow<'a, [u8]>);
 
+#[cfg(feature = "alloc")]
 impl<'a> Deref for EncodedValues<'a> {
     type Target = Cow<'a, [u8]>;
 
@@ -203,6 +207,10 @@ impl<'a> Value<'a> {
             Value::Float(_) => stringify!(Value::Float),
             Value::Double(_) => stringify!(Value::Double),
             Value::String(_) => stringify!(Value::String),
+            #[cfg(feature = "alloc")]
+            Value::OwnedString(_) => stringify!(Value::OwnedString),
+            #[cfg(feature = "alloc")]
+            Value::OwnedError(_) => stringify!(Value::OwnedError),
             Value::Error(_) => stringify!(Value::Error),
             Value::Opaque(_) => stringify!(Value::Opaque),
             Value::Function(_) => stringify!(Value::Function),
@@ -215,7 +223,11 @@ impl<'a> Value<'a> {
             &Value::Int32(_) | &Value::UInt32(_) | &Value::Float(_) => 4,
             &Value::Int64(_) | &Value::UInt64(_) | &Value::Double(_) => 8,
             &Value::String(ref i) => i.len() + 1,
+            #[cfg(feature = "alloc")]
+            &Value::OwnedString(ref i) => i.len() + 1,
             &Value::Error(ref i) => i.len() + 1,
+            #[cfg(feature = "alloc")]
+            &Value::OwnedError(ref i) => i.len() + 1,
             &Value::Opaque(ref i) => i.len(),
             &Value::EmbeddedIn(ref i) => i.encoded_len(),
             &Value::EmbeddedOut(ref f) => f.buff.len(),
@@ -397,19 +409,33 @@ fn encode_sos(buf: &mut [u8], values: &[Value]) -> usize {
                 val_type = CType::Double;
                 NativeEndian::write_f64(&mut buf[coffset..], i)
             }
-            &Value::String(ref i) => {
+            &Value::String(i) => {
                 length = i.len() as u32 + 1;
                 val_type = CType::String;
                 (&mut buf[coffset..coffset + i.len()]).copy_from_slice(i.as_bytes());
                 buf[coffset + i.len()] = 0;
             }
-            &Value::Error(ref i) => {
+            #[cfg(feature = "alloc")]
+            &Value::OwnedString(ref i) => {
+                length = i.len() as u32 + 1;
+                val_type = CType::String;
+                (&mut buf[coffset..coffset + i.len()]).copy_from_slice(i.as_bytes());
+                buf[coffset + i.len()] = 0;
+            }
+            #[cfg(feature = "alloc")]
+            &Value::OwnedError(ref i) => {
                 length = i.len() as u32 + 1;
                 val_type = CType::Error;
                 (&mut buf[coffset..coffset + i.len()]).copy_from_slice(i.as_bytes());
                 buf[coffset + i.len()] = 0;
             }
-            &Value::Opaque(ref i) => {
+            &Value::Error(i) => {
+                length = i.len() as u32 + 1;
+                val_type = CType::Error;
+                (&mut buf[coffset..coffset + i.len()]).copy_from_slice(i.as_bytes());
+                buf[coffset + i.len()] = 0;
+            }
+            &Value::Opaque(i) => {
                 length = i.len() as u32;
                 val_type = CType::Opaque;
                 (&mut buf[coffset..coffset + i.len()]).copy_from_slice(&i);
@@ -442,7 +468,7 @@ fn encode_sos(buf: &mut [u8], values: &[Value]) -> usize {
     return coffset;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DecodeIter<'a> {
     count: usize,
     buff: &'a [u8],
@@ -466,7 +492,7 @@ impl<'a> DecodeIter<'a> {
     }
 }
 
-fn decode_sos(buff: &[u8]) -> DecodeIter {
+pub fn decode_sos(buff: &[u8]) -> DecodeIter {
     let count = NativeEndian::read_u32(&buff[..4]) as usize;
     DecodeIter {
         count: count,
@@ -513,19 +539,4 @@ impl<'a> Iterator for DecodeIter<'a> {
         self.count -= 1;
         Some(val)
     }
-}
-
-#[test]
-fn encode_decode() {
-    let mut buf = [0; 100];
-    let vals = &[
-        Value::Int64(3),
-        Value::Double(2.8),
-        Value::Error("Hello".to_string()),
-        Value::Opaque([1, 2, 3].to_vec()),
-        Value::String("world".to_string()),
-    ];
-    let len = EncodeSOS(&mut buf, vals);
-    let decoded = DecodeSOS(&buf[..len]);
-    assert_eq!(vals.to_vec(), decoded)
 }
