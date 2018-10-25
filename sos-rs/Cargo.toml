@@ -12,3 +12,5 @@ byteorder = { version = "1.1.0", default-features = false }
 [dev-dependencies]
 rand = "0.5.5"
 rand_xorshift = "0.1.0"
+quickcheck = "0.7.1"
+quickcheck_macros = "0.6"
