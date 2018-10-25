@@ -45,6 +45,7 @@ fn cast_test(mut args: DecodeIter) {
         "Kernel returned {:?}",
         EncodedValues::from(ret.unwrap())
             .decode()
+            .unwrap()
             .collect::<Vec<_>>()
     );
 }
@@ -54,7 +55,9 @@ pub fn dispatch<'a, 'b>(
     fuse: bool,
 ) -> Result<OwnedEncodedValues, JustError<'static>> {
     let args = EncodedValues::from(args);
-    let mut iter = args.decode();
+    let mut iter = args
+        .decode()
+        .ok_or(JustError::new("Could not decode argumenta"))?;
     let function: Function = iter
         .next()
         .ok_or(JustError::new("Not enough arguments"))?

@@ -106,6 +106,7 @@ fn encode_decode() {
     ];
     let rvals = ReferencedValues(&vals);
     let len = rvals.encode(&mut buf[..]);
+    println!("Encoded {:?}", &buf[..len]);
     let decoded = decode_sos(&buf[..len], false).collect::<Vec<_>>();
     println!("{:?}", decoded);
     assert_eq!(rvals, ReferencedValues(&decoded[..]))

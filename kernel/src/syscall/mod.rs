@@ -61,6 +61,7 @@ pub fn syscall(a: usize, b: usize, c: usize, stack: &mut SyscallStack) -> usize 
             SYS_WRITE => {
                 let string: &str = args
                     .decode()
+                    .ok_or(JustError::new("Could not decode SOS"))?
                     .next()
                     .ok_or(JustError::new("First argument to write must be String"))?
                     .try_into()

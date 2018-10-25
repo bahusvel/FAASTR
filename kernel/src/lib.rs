@@ -157,7 +157,7 @@ pub fn kmain(cpus: usize, env: &[u8]) -> ! {
 
         println!(
             "Received from host {:?}",
-            result.decode().collect::<Vec<Value>>()
+            result.decode().map(|i| i.collect::<Vec<Value>>())
         );
     }
 

@@ -6,7 +6,9 @@ use sos::{EncodedValues, Function, JustError, Value};
 use syscall::exit;
 
 pub fn sys_fuse(args: EncodedValues) -> Result<EncodedValues, JustError<'static>> {
-    let mut iter = args.decode();
+    let mut iter = args
+        .decode()
+        .ok_or(JustError::new("Could not decode SOS"))?;
     let function: Function = iter
         .next()
         .ok_or(JustError::new("Not enough arguments"))?
@@ -24,14 +26,16 @@ pub fn sys_fuse(args: EncodedValues) -> Result<EncodedValues, JustError<'static>
     println!(
         "Returning from a fuse call {:?} -> {:?}",
         function,
-        ret.decode().collect::<Vec<Value>>()
+        ret.decode().map(|i| i.collect::<Vec<Value>>())
     );
 
     Ok(ret)
 }
 
 pub fn sys_cast(args: EncodedValues) -> Result<(), JustError<'static>> {
-    let mut iter = args.decode();
+    let mut iter = args
+        .decode()
+        .ok_or(JustError::new("Could not decode SOS"))?;
 
     let function: Function = iter
         .next()
@@ -60,7 +64,7 @@ pub fn sys_return(values: EncodedValues) -> ! {
         println!(
             "Function {} exited with {:?}",
             context_lock.name(),
-            values.decode().collect::<Vec<Value>>()
+            values.decode().map(|i| i.collect::<Vec<Value>>())
         );
         context_lock.result = Some(values.into_owned());
     }

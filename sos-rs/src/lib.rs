@@ -15,6 +15,7 @@ use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::fmt::Debug;
 use core::ops::Deref;
+use core::slice;
 use core::str::from_utf8;
 
 const NULL: [u8; 1] = [0];
@@ -189,18 +190,17 @@ impl<'a> Deref for EncodedValues<'a> {
 
 #[cfg(feature = "alloc")]
 impl<'a> EncodedValues<'a> {
-    pub fn decode(&self) -> DecodeIter {
+    pub fn decode(&self) -> Option<DecodeIter> {
         decode_sos(&self, true)
     }
     pub fn into_owned(self) -> OwnedEncodedValues {
         self.0.into_owned()
     }
-    /* NO, length is not currently sent, I need to send it.
+    // NO, length is not currently sent, I need to send it.
     pub unsafe fn from_ptr(ptr: EncodedValuesPtr) -> Self {
-        let length = *(ptr as *const u32);
+        let length = *(ptr as *const u32).offset(1);
         EncodedValues(Cow::Borrowed(slice::from_raw_parts(ptr, length as usize)))
     }
-    */
 }
 
 #[cfg(feature = "alloc")]
@@ -282,14 +282,14 @@ impl<'a> Value<'a> {
         match self {
             &Value::Int32(_) | &Value::UInt32(_) | &Value::Float(_) => 4,
             &Value::Int64(_) | &Value::UInt64(_) | &Value::Double(_) => 8,
-            &Value::String(ref i) => i.len() + 1,
-            &Value::Error(ref i) => i.len() + 1,
-            &Value::Opaque(ref i) => i.len(),
-            &Value::EmbeddedIn(ref i) => i.encoded_len(),
-            &Value::EmbeddedOut(ref f) => f.buff.len(),
+            &Value::String(ref i) => i.len() + 1 + 4,
+            &Value::Error(ref i) => i.len() + 1 + 4,
+            &Value::Opaque(ref i) => i.len() + 4,
+            &Value::EmbeddedIn(ref i) => i.encoded_len() + 4,
+            &Value::EmbeddedOut(ref f) => f.buff.len() + 4,
             #[cfg(feature = "alloc")]
-            &Value::EmbeddedVec(ref i) => ReferencedValues(&i[..]).encoded_len(),
-            &Value::Function(ref f) => f.module.len() + f.name.len() + 2,
+            &Value::EmbeddedVec(ref i) => ReferencedValues(&i[..]).encoded_len() + 4,
+            &Value::Function(ref f) => f.module.len() + f.name.len() + 2 + 4,
         }
     }
 }
@@ -370,7 +370,7 @@ impl<'a> TryInto<&'a str> for Value<'a> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum CType {
     Invalid,
     Int32,
@@ -387,7 +387,7 @@ enum CType {
 }
 
 impl CType {
-    fn from_u32(i: u32) -> Option<Self> {
+    fn from_u8(i: u8) -> Option<Self> {
         match i {
             0 => Some(CType::Invalid),
             1 => Some(CType::Int32),
@@ -407,7 +407,7 @@ impl CType {
 }
 
 pub fn encoded_len(values: &[Value]) -> usize {
-    let mut len = values.len() * 8 + 8;
+    let mut len = values.len() + 8;
     for value in values {
         len += value.encoded_size();
     }
@@ -430,54 +430,67 @@ macro_rules! sos {
 
 #[allow(unused_must_use)]
 fn encode_sos(buf: &mut [u8], values: &[Value]) -> usize {
-    let mut coffset = 16;
-
+    let len = ReferencedValues(values).encoded_len();
+    assert!(buf.len() >= len);
+    let buf = &mut buf[..len];
+    NativeEndian::write_u32(&mut buf[..4], values.len() as u32);
+    NativeEndian::write_u32(&mut buf[4..8], len as u32);
+    let mut coffset = 8;
     for value in values {
-        let length = value.encoded_size();
         let val_type = value.ctype();
-
+        let mut length = value.encoded_size();
+        buf[coffset] = val_type as u8;
+        coffset += match val_type {
+            CType::Int32
+            | CType::UInt32
+            | CType::Float
+            | CType::Int64
+            | CType::UInt64
+            | CType::Double => 1,
+            _ => {
+                length -= 4;
+                NativeEndian::write_u32(&mut buf[coffset + 1..coffset + 4 + 1], length as u32);
+                5
+            }
+        };
+        let wbuf = &mut buf[coffset..coffset + length];
         match value {
-            &Value::Int32(i) => NativeEndian::write_i32(&mut buf[coffset..], i),
-            &Value::UInt32(i) => NativeEndian::write_u32(&mut buf[coffset..], i),
-            &Value::Int64(i) => NativeEndian::write_i64(&mut buf[coffset..], i),
-            &Value::UInt64(i) => NativeEndian::write_u64(&mut buf[coffset..], i),
-            &Value::Float(i) => NativeEndian::write_f32(&mut buf[coffset..], i),
-            &Value::Double(i) => NativeEndian::write_f64(&mut buf[coffset..], i),
+            &Value::Int32(i) => NativeEndian::write_i32(wbuf, i),
+            &Value::UInt32(i) => NativeEndian::write_u32(wbuf, i),
+            &Value::Int64(i) => NativeEndian::write_i64(wbuf, i),
+            &Value::UInt64(i) => NativeEndian::write_u64(wbuf, i),
+            &Value::Float(i) => NativeEndian::write_f32(wbuf, i),
+            &Value::Double(i) => NativeEndian::write_f64(wbuf, i),
             &Value::String(i) => {
-                (&mut buf[coffset..coffset + i.len()]).copy_from_slice(i.as_bytes());
-                buf[coffset + i.len()] = 0;
+                wbuf[..length - 1].copy_from_slice(i.as_bytes());
+                wbuf[length - 1] = 0;
             }
             &Value::Error(i) => {
-                (&mut buf[coffset..coffset + i.len()]).copy_from_slice(i.as_bytes());
-                buf[coffset + i.len()] = 0;
+                wbuf[..length - 1].copy_from_slice(i.as_bytes());
+                wbuf[length - 1] = 0;
             }
             &Value::Opaque(i) => {
-                (&mut buf[coffset..coffset + i.len()]).copy_from_slice(&i);
+                wbuf.copy_from_slice(&i);
             }
             &Value::EmbeddedIn(ref i) => {
-                i.encode(&mut buf[coffset..]);
+                i.encode(wbuf);
             }
             &Value::EmbeddedOut(ref f) => {
-                f.encode(&mut buf[coffset..]);
+                f.encode(wbuf);
             }
             &Value::EmbeddedVec(ref i) => {
-                ReferencedValues(&i[..]).encode(&mut buf[coffset..]);
+                ReferencedValues(&i[..]).encode(wbuf);
             }
             &Value::Function(ref f) => {
-                (&mut buf[coffset..coffset + f.module.len()]).copy_from_slice(f.module.as_bytes());
-                buf[coffset + f.module.len()] = 0;
-                (&mut buf[coffset + 1 + f.module.len()..coffset + length as usize - 1])
-                    .copy_from_slice(f.name.as_bytes());
-                buf[coffset + length as usize - 1] = 0;
+                let modlen = f.module.len();
+                wbuf[..modlen].copy_from_slice(f.module.as_bytes());
+                wbuf[modlen] = 0;
+                wbuf[1 + modlen..length as usize - 1].copy_from_slice(f.name.as_bytes());
+                wbuf[length as usize - 1] = 0;
             }
         }
-        NativeEndian::write_u32(&mut buf[coffset - 8..coffset - 4], val_type as u32);
-        NativeEndian::write_u32(&mut buf[coffset - 4..coffset], length as u32);
-        coffset += length as usize + 8
+        coffset += length as usize;
     }
-    NativeEndian::write_u32(&mut buf[..4], values.len() as u32);
-    NativeEndian::write_u32(&mut buf[4..8], 0);
-
     return coffset;
 }
 
@@ -506,28 +519,44 @@ impl<'a> DecodeIter<'a> {
     }
 }
 
-pub fn decode_sos(buff: &[u8], lazy: bool) -> DecodeIter {
-    let count = NativeEndian::read_u32(&buff[..4]) as usize;
-    DecodeIter {
-        count: count,
-        buff: &buff[8..],
-        lazy: lazy,
+pub fn decode_sos(buff: &[u8], lazy: bool) -> Option<DecodeIter> {
+    if buff.len() <= 8 {
+        return None;
     }
+    let count = NativeEndian::read_u32(&buff[..4]) as usize;
+    let size = NativeEndian::read_u32(&buff[4..8]) as usize;
+    if buff.len() < size || size < 8 {
+        return None;
+    }
+    Some(DecodeIter {
+        count: count,
+        buff: &buff[8..size],
+        lazy: lazy,
+    })
 }
 
 impl<'a> Iterator for DecodeIter<'a> {
     type Item = Value<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.buff.len() < 8 || self.count == 0 {
+        if self.buff.len() < 5 || self.count == 0 {
             return None;
         }
-        let val_type = NativeEndian::read_u32(&self.buff[..4]);
-        let val_length = NativeEndian::read_u32(&self.buff[4..8]) as usize;
-        //assert!(val_length != 0);
-        assert!(val_length + 8 <= self.buff.len());
-        let val_data = &self.buff[8..8 + val_length];
-        let val = match CType::from_u32(val_type)? {
+        let mut offset = 1;
+        let val_type = CType::from_u8(self.buff[0])?;
+        let val_length = match val_type {
+            CType::Int32 | CType::UInt32 | CType::Float => 4,
+            CType::Int64 | CType::UInt64 | CType::Double => 8,
+            _ => {
+                offset += 4;
+                NativeEndian::read_u32(&self.buff[1..5]) as usize
+            }
+        };
+        if self.buff.len() < val_length + offset {
+            return None;
+        }
+        let val_data = &self.buff[offset..offset + val_length];
+        let val = match val_type {
             CType::Invalid => return None,
             CType::Int32 => Value::Int32(NativeEndian::read_i32(&val_data)),
             CType::UInt32 => Value::UInt32(NativeEndian::read_u32(&val_data)),
@@ -535,18 +564,22 @@ impl<'a> Iterator for DecodeIter<'a> {
             CType::UInt64 => Value::UInt64(NativeEndian::read_u64(&val_data)),
             CType::Float => Value::Float(NativeEndian::read_f32(&val_data)),
             CType::Double => Value::Double(NativeEndian::read_f64(&val_data)),
-            CType::String => Value::String(from_utf8(&val_data[..val_length - 1]).unwrap()),
-            CType::Error => Value::Error(from_utf8(&val_data[..val_length - 1]).unwrap()),
+            CType::String => Value::String(
+                from_utf8(&val_data[..if val_length == 0 { 0 } else { val_length - 1 }]).ok()?,
+            ),
+            CType::Error => Value::Error(
+                from_utf8(&val_data[..if val_length == 0 { 0 } else { val_length - 1 }]).ok()?,
+            ),
             CType::Opaque => Value::Opaque(&val_data[..val_length]),
             CType::Function => {
-                let vec = &val_data[..val_length - 1];
-                let pos = vec.iter().position(|&x| x == '\0' as u8).unwrap();
-                let module = from_utf8(&vec[..pos]).unwrap();
-                let name = from_utf8(&vec[pos + 1..]).unwrap();
+                let vec = &val_data[..if val_length == 0 { 0 } else { val_length - 1 }];
+                let pos = vec.iter().position(|&x| x == '\0' as u8)?;
+                let module = from_utf8(&vec[..pos]).ok()?;
+                let name = from_utf8(&vec[pos + 1..]).ok()?;
                 Value::Function(Function { module, name })
             }
             CType::Embedded => {
-                let iter = decode_sos(val_data, self.lazy);
+                let iter = decode_sos(val_data, self.lazy)?;
                 if self.lazy {
                     Value::EmbeddedOut(iter)
                 } else {
@@ -554,7 +587,7 @@ impl<'a> Iterator for DecodeIter<'a> {
                 }
             }
         };
-        self.buff = &self.buff[val_length + 8..];
+        self.buff = &self.buff[val_length + offset..];
         self.count -= 1;
         Some(val)
     }
